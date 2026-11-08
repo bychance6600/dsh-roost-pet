@@ -1,0 +1,4 @@
+# pnpm 10+ 默认不给依赖跑安装脚本。electron 的 postinstall 要从缓存里
+# 解出 win32-x64 的二进制，所以这里显式放行它一个。
+onlyBuiltDependencies:
+  - electron

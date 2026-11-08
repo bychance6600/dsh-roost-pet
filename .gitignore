@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log*
+*.log
+
+# 宠物素材不入库（assets/ 只在本地放，见 docs/protocol.md §8）
+assets/
+
+# Electron profile：userData 固定到这里（见 src/main.js）
+.userdata/
+
+# 本地测试产物
+.tmp/

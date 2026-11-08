@@ -1,0 +1,19 @@
+{
+  "name": "dsh-roost-pet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "roost 的身体：一个透明置顶的小窗，只把 roost 给的字冒出来",
+  "license": "MIT",
+  "main": "src/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "fake": "node tools/fake-roost.js"
+  },
+  "devDependencies": {
+    "electron": "43.3.0"
+  }
+}
