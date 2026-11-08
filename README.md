@@ -20,7 +20,8 @@ roost 的身体。
 - 协议 v1 的握手、`say` 冒泡、`state` 只读显示、`act` 收下不演、`bye` / stdin EOF / 关窗退出
 - 气泡时长 `clamp(字数/12, 2.5s, 10s)`，长句往上长窗口，不裁字
 - 队列 20 条、`id+seq` 去重、坏消息只 warn 不崩
-- 假 roost 与协议/气泡的单元测试
+- 假 roost 与协议/气泡/退出码的单元测试
+- 启动约定（可执行、参数、退出码 0/3/4/1）见 [`docs/launch.md`](docs/launch.md)
 
 还没有的（按施工单顺序往后做）：拖拽与物理、别针与吸附、注意力、双击聊天、设置窗、宠物包渲染、打包。
 
@@ -62,6 +63,7 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 "$NODE" tools/fake-roost.js            # 握手 → 两条 say → 动作 → 状态 → bye
 "$NODE" tools/fake-roost.js --eof      # 说完关 stdin，看它退不退得干净
 "$NODE" tools/fake-roost.js --garbage  # 先灌坏消息，再发好的，看它崩不崩
+"$NODE" tools/fake-roost.js --abort    # 握手前关 stdin，应该退出码 3，且不发 bye
 ```
 
 `--size=1.2`、`--position=...`、`--hold=4500`（每条气泡看多久再收尾）会透传给 body。

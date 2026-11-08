@@ -19,6 +19,20 @@ const { StringDecoder } = require('node:string_decoder');
 
 const { LineDecoder, parseLine, validate, encode } = require('../lib/protocol');
 const { BubbleQueue } = require('../lib/bubbles');
+const { EXIT, exitCodeFor } = require('../lib/exit');
+
+// 启动期就把 console.* 全接到 stderr：只要有一行 console.log 落到 stdout，
+// roost 那一侧的协议流就坏了。§1.6 的空行跳过只是兜底——Electron 自己
+// 启动时还会往 stdout 甩一个换行，那一个挡不住，但也不该再多出第二个。
+for (const level of ['log', 'info', 'debug', 'warn', 'error']) {
+  console[level] = (...parts) => {
+    try {
+      process.stderr.write(`${parts.map((p) => (typeof p === 'string' ? p : String(p))).join(' ')}\n`);
+    } catch {
+      /* stderr 也没了就算了 */
+    }
+  };
+}
 
 const PKG = require('../package.json');
 const BODY_ID = `${PKG.name}/${PKG.version}`;
@@ -442,7 +456,8 @@ function startIpc() {
 function shutdown(reason) {
   if (shuttingDown) return;
   shuttingDown = true;
-  log('info', `退出：${reason}`);
+  const code = exitCodeFor(reason, { handshaken });
+  log('info', `退出：${reason}（退出码 ${code}）`);
 
   if (stdinStop) stdinStop();
   saveWindowState();
@@ -450,7 +465,7 @@ function shutdown(reason) {
 
   const finish = () => {
     // 给 stdout 一点时间冲干净，再走。
-    setTimeout(() => app.exit(0), 50);
+    setTimeout(() => app.exit(code), 50);
   };
 
   try {
@@ -461,7 +476,7 @@ function shutdown(reason) {
 
   setTimeout(() => {
     log('warn', '退出超时，硬退');
-    process.exit(0);
+    process.exit(code);
   }, EXIT_DEADLINE_MS).unref();
 }
 
@@ -492,7 +507,7 @@ function boot() {
 // §7.4 单实例：第二只直接退，stderr 说清原因。
 if (!app.requestSingleInstanceLock()) {
   log('warn', '已经有一只 body 在跑了（单实例锁没抢到），这只退出');
-  app.exit(0);
+  app.exit(EXIT.SECOND_INSTANCE);
 } else {
   app.on('second-instance', () => log('info', '第二只被单实例锁挡回去了'));
   boot();

@@ -127,7 +127,7 @@ async function main() {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
 
-  const mode = has('eof') ? 'eof' : has('garbage') ? 'garbage' : 'normal';
+  const mode = has('abort') ? 'abort' : has('eof') ? 'eof' : has('garbage') ? 'garbage' : 'normal';
   console.log(`\n假 roost（${mode}）→ ${binary} ${bodyArgs.slice(1).join(' ') || '(默认)'}\n`);
 
   const child = spawn(binary, bodyArgs, { stdio: ['pipe', 'pipe', 'pipe'], env });
@@ -184,6 +184,17 @@ async function main() {
       String(hello.body),
     );
     check(typeof hello.pet === 'string' && hello.pet.length > 0, 'hello.pet 有值');
+
+    if (mode === 'abort') {
+      // 不回 hello，直接关 stdin：body 应该按"握手失败"退，码是 3。
+      console.log(`${stamp()} × 握手前关掉 stdin（不回 hello）`);
+      child.stdin.end();
+      const code = await waitExit(3000);
+      check(code === 3, `握手前 EOF → 退出码 3（实际 ${code}）`);
+      check(!seen.some((m) => m.t === 'bye'), '握手没完成就不发 bye');
+      summarize(mode);
+      return;
+    }
 
     send({ t: 'hello', v: 1, roost: 'fake-roost/0.1.0' });
     send({ t: 'state', state: 'thinking', why: '假 roost：在想今天的事' });
@@ -246,6 +257,10 @@ async function main() {
     if (child.exitCode === null) child.kill();
   }
 
+  summarize(mode);
+}
+
+function summarize(mode) {
   console.log('');
   if (failures === 0) {
     console.log(`全部通过（${mode}）`);
