@@ -110,7 +110,7 @@ async function main() {
     process.exit(2);
   }
 
-  const bodyArgs = [ROOT];
+  const bodyArgs = [ROOT, '--protocol=1'];
   for (const key of ['size', 'position', 'click-through', 'pet']) {
     const value = opt(key);
     if (value !== undefined) bodyArgs.push(`--${key}=${value}`);
@@ -186,11 +186,11 @@ async function main() {
     check(typeof hello.pet === 'string' && hello.pet.length > 0, 'hello.pet 有值');
 
     if (mode === 'abort') {
-      // 不回 hello，直接关 stdin：body 应该按"握手失败"退，码是 3。
+      // 不回 hello，直接关 stdin：body 应该按"握手失败"退，码是 2。
       console.log(`${stamp()} × 握手前关掉 stdin（不回 hello）`);
       child.stdin.end();
       const code = await waitExit(3000);
-      check(code === 3, `握手前 EOF → 退出码 3（实际 ${code}）`);
+      check(code === 2, `握手前 EOF → 退出码 2（实际 ${code}）`);
       check(!seen.some((m) => m.t === 'bye'), '握手没完成就不发 bye');
       summarize(mode);
       return;

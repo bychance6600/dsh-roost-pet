@@ -20,6 +20,8 @@ const { StringDecoder } = require('node:string_decoder');
 const { LineDecoder, parseLine, validate, encode } = require('../lib/protocol');
 const { BubbleQueue } = require('../lib/bubbles');
 const { EXIT, exitCodeFor } = require('../lib/exit');
+const { parseArgs } = require('../lib/args');
+const { serializePidRecord, parsePidRecord } = require('../lib/pidfile');
 
 // 启动期就把 console.* 全接到 stderr：只要有一行 console.log 落到 stdout，
 // roost 那一侧的协议流就坏了。§1.6 的空行跳过只是兜底——Electron 自己
@@ -72,30 +74,6 @@ const bubbles = new BubbleQueue({
   onIdle: () => toRenderer('pet:bubble-hide'),
   log: (msg) => reportWarn(msg),
 });
-
-// ---------------------------------------------------------------------------
-// 参数
-// ---------------------------------------------------------------------------
-
-function parseArgs(argv) {
-  const out = { size: 1, position: 'bottom-right', clickThrough: true, pet: 'default' };
-  for (const arg of argv) {
-    const m = /^--([a-z][a-z-]*)=(.*)$/.exec(arg);
-    if (!m) continue;
-    const [, key, value] = m;
-    if (key === 'size') {
-      const n = Number.parseFloat(value);
-      if (Number.isFinite(n)) out.size = Math.min(2.5, Math.max(0.6, n));
-    } else if (key === 'position') {
-      out.position = value;
-    } else if (key === 'click-through') {
-      out.clickThrough = value !== '0' && value !== 'false';
-    } else if (key === 'pet') {
-      out.pet = value || 'default';
-    }
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // 日志：一律 stderr。console.log 会直接冲坏 stdout 上的协议。
@@ -286,6 +264,56 @@ function userDataFile(name) {
   return path.join(app.getPath('userData'), name);
 }
 
+// .userdata/body.pid：让 roost 能分清"另一只活 body"和"上一轮留下的锁"。
+// 崩溃时这个文件不会被删——那正是它的用处。
+function writePidRecord() {
+  try {
+    fs.mkdirSync(app.getPath('userData'), { recursive: true });
+    fs.writeFileSync(
+      userDataFile('body.pid'),
+      serializePidRecord({
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+        version: BODY_ID,
+      }),
+      'utf8',
+    );
+  } catch (err) {
+    log('warn', `body.pid 没写成：${err.message}`);
+  }
+}
+
+function removePidRecord() {
+  try {
+    const raw = fs.readFileSync(userDataFile('body.pid'), 'utf8');
+    const rec = parsePidRecord(raw);
+    // 只删自己的：别把下一只还没写好的记录删了。
+    if (rec && rec.pid === process.pid) fs.unlinkSync(userDataFile('body.pid'));
+  } catch {
+    /* 不在、坏了、删不掉，都不影响退出 */
+  }
+}
+
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 单实例锁没抢到时，把锁的主人写清楚：roost 才知道是清理还是放弃。 */
+function describeLockHolder() {
+  try {
+    const rec = parsePidRecord(fs.readFileSync(userDataFile('body.pid'), 'utf8'));
+    if (!rec) return 'body.pid 存在但读不懂（旧版本写的？）';
+    return `pid=${rec.pid} 启动于 ${rec.startedAt} 版本 ${rec.version || '未知'} 存活=${pidAlive(rec.pid) ? 'yes' : 'no'}`;
+  } catch {
+    return '没有 body.pid（上一只可能是旧版本，或没来得及写）';
+  }
+}
+
 function readWindowState() {
   try {
     const raw = fs.readFileSync(userDataFile('window.json'), 'utf8');
@@ -337,6 +365,11 @@ function defaultPosition(width, height) {
       return { x: a.x + a.width - width - MARGIN, y: a.y + MARGIN };
     case 'top-left':
       return { x: a.x + MARGIN, y: a.y + MARGIN };
+    case 'center':
+      return {
+        x: a.x + Math.round((a.width - width) / 2),
+        y: a.y + Math.round((a.height - height) / 2),
+      };
     case 'bottom-right':
     default:
       return { x: a.x + a.width - width - MARGIN, y: a.y + a.height - height - MARGIN };
@@ -461,6 +494,7 @@ function shutdown(reason) {
 
   if (stdinStop) stdinStop();
   saveWindowState();
+  removePidRecord();
   bubbles.dispose();
 
   const finish = () => {
@@ -468,9 +502,14 @@ function shutdown(reason) {
     setTimeout(() => app.exit(code), 50);
   };
 
-  try {
-    process.stdout.write(encode({ t: 'bye' }), finish);
-  } catch {
+  if (handshaken) {
+    try {
+      process.stdout.write(encode({ t: 'bye' }), finish);
+    } catch {
+      finish();
+    }
+  } else {
+    // 握手没完成只许发 hello（§2.1），bye 都不发。
     finish();
   }
 
@@ -485,6 +524,13 @@ function shutdown(reason) {
 // ---------------------------------------------------------------------------
 
 function boot() {
+  // §4.2：不认的协议版本要写 stderr 并按退出码 2 退，不要硬跑。
+  if (!args.protocolOk) {
+    log('error', `不认的协议版本：--protocol=${args.protocol ?? '(非整数)'}，只认 1`);
+    shutdown('protocol-error');
+    return;
+  }
+
   startReadingStdin();
   startIpc();
 
@@ -504,11 +550,12 @@ function boot() {
   log('info', `启动 ${BODY_ID}，尺寸 x${args.size}，位置 ${args.position}`);
 }
 
-// §7.4 单实例：第二只直接退，stderr 说清原因。
+// §7.4 单实例：第二只直接退，stderr 说清是谁拿着锁。
 if (!app.requestSingleInstanceLock()) {
-  log('warn', '已经有一只 body 在跑了（单实例锁没抢到），这只退出');
+  log('warn', `已经有一只 body 在跑了（单实例锁没抢到），这只退出。${describeLockHolder()}`);
   app.exit(EXIT.SECOND_INSTANCE);
 } else {
+  writePidRecord();
   app.on('second-instance', () => log('info', '第二只被单实例锁挡回去了'));
   boot();
 }

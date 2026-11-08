@@ -63,7 +63,7 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 "$NODE" tools/fake-roost.js            # 握手 → 两条 say → 动作 → 状态 → bye
 "$NODE" tools/fake-roost.js --eof      # 说完关 stdin，看它退不退得干净
 "$NODE" tools/fake-roost.js --garbage  # 先灌坏消息，再发好的，看它崩不崩
-"$NODE" tools/fake-roost.js --abort    # 握手前关 stdin，应该退出码 3，且不发 bye
+"$NODE" tools/fake-roost.js --abort    # 握手前关 stdin，应该退出码 2，且不发 bye
 ```
 
 `--size=1.2`、`--position=...`、`--hold=4500`（每条气泡看多久再收尾）会透传给 body。
