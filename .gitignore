@@ -11,5 +11,8 @@ assets/
 # 本地测试产物
 .tmp/
 
+# 打包产物
+dist/
+
 # 本地宠物包（真素材，不入库）；pets/default/pet.json 是模板，用 git add -f 单独带上
 pets/

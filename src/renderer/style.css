@@ -203,6 +203,27 @@ body {
   }
 }
 
+/* 睡着时被戳：只晃一下，不叫醒（300ms、±2px） */
+#pet.nudge {
+  animation: nudge 300ms ease;
+}
+
+@keyframes nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  55% {
+    transform: translateX(2px);
+  }
+  80% {
+    transform: translateX(-1px);
+  }
+}
+
 #pet-video,
 #pet-img {
   position: absolute;

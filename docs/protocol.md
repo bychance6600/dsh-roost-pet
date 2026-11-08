@@ -49,7 +49,7 @@
 | --- | --- | --- | --- |
 | `hello` | `v:number`, `body:string`, `pet:string` | 是 | 启动即发；`v=1`；`body` 形如 `dsh-roost-pet/0.1.0`；`pet` 是当前宠物包 id |
 | `input` | `id:string`, `text:string` | 是 | 聊天框按 Enter 时发**原文**：不 trim、不补标点、不转义、不加"正在输入" |
-| `poke` | `x:number`, `y:number` | 是 | 点击身体时发；**窗口内 CSS 像素，原点为窗口左上**（见 §9 澄清） |
+| `poke` | `ts:string`, `x?:number`, `y?:number` | 是 | 点击身体时发；`ts` 是 ISO 时间（重复点击时 roost 自己按间隔去重）。`x/y` 可省，给了就是窗口内 CSS 像素、原点窗口左上 |
 | `ack` | `id:string` | 是 | 收到 `say` 且已入队（§6） |
 | `log` | `level:enum`, `msg:string` | 是 | 需要 roost 记一笔的异常 |
 | `bye` | —（无字段） | — | 退出前尽力发一次 |
@@ -98,6 +98,7 @@
 | 2026-11-08 | v1 | 显示时长由 `max(8s, 字数/12)` 改为 `clamp(字数/12, 2.5s, 10s)`；1.2 秒最早替换间隔不变；补一句"气泡放不下就往上长，不裁字" | body |
 | 2026-11-08 | v1 | 澄清 §5.2：去重键是 `id + seq`，不是单独的 `id`——否则 §5.3 的同轮分条会全被当成重复丢掉 | body |
 | 2026-11-08 | v1 | 补 §1.6：空行忽略。Electron 在 Windows 启动时会先往 stdout 甩一个空行，读侧不能当成坏消息 | body |
+| 2026-11-08 | v1 | 点击改由 roost 决定：`poke` 改为 `ts` 必填、`x/y` 可选（body 只报一声，不再自带 click 动作） | body |
 | 2026-11-08 | v1 | 从施工单 §3 抽出成独立表；澄清 `poke.x/y` 为窗口内 CSS 像素；补齐容错（坏 JSON/未知 t/缺字段）、重复 `id` 去重、`final` 语义、队列满与 `ack` 的先后、行缓冲上限 | body |
 
 ## 10. 附录：一轮完整示例

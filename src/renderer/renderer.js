@@ -294,8 +294,14 @@ function playUrlsLoop(urls) {
 }
 
 /** 播放一次某组画面；播完回到呼吸。 */
+// 组里有多段时，单次播放随机挑一段：底噪、点击、动作都不必每次从第一段开始。
+function pickOne(urls) {
+  if (!urls || urls.length <= 1) return urls;
+  return [urls[Math.floor(Math.random() * urls.length)]];
+}
+
 function playOnce(name, opts) {
-  return playUrlsOnce(resolveGroup(name), opts);
+  return playUrlsOnce(pickOne(resolveGroup(name)), opts);
 }
 
 function playLoop(name) {
@@ -447,7 +453,7 @@ function cancelActionWindow() {
 
 /** 播一次动作片段；播完不足 1.2 秒就停在末帧补足，再回档位。 */
 function playActionClip(name) {
-  const urls = resolveGroup(name);
+  const urls = pickOne(resolveGroup(name));
   if (!urls || !urls.length) return false;
 
   stopPlayback();
@@ -718,10 +724,20 @@ function squash(depth) {
   petEl.classList.add('squash');
 }
 
-petEl.addEventListener('animationend', () => petEl.classList.remove('squash'));
+/** 睡着时被戳：只晃 1–2px、300ms，像被碰了一下；不醒、不发协议。 */
+function nudge() {
+  petEl.classList.remove('nudge');
+  void petEl.offsetWidth; // 连点也要能重新触发
+  petEl.classList.add('nudge');
+}
+
+petEl.addEventListener('animationend', () => {
+  petEl.classList.remove('squash');
+  petEl.classList.remove('nudge');
+});
 
 // ---------------------------------------------------------------------------
-// 拖拽与单击：拖走时用主进程 setPosition，单击播 click 并报 poke
+// 拖拽与单击：拖走时用主进程 setPosition；单击只做「被碰一下」，反应由 roost 定
 // ---------------------------------------------------------------------------
 
 const DRAG_THRESHOLD = 4; // 超过几个 CSS 像素才算拖，不算点
@@ -771,15 +787,14 @@ function endDrag(event, { cancelled = false } = {}) {
   dragRestore = null;
   if (cancelled) return;
 
-  // 单击：包里点一次（随机挑一段），没包就用 CSS 骨架轻跳一下。
-  squash(0.1);
-  const clips = resolveGroup('click');
-  if (clips && clips.length) {
-    playUrlsOnce([clips[Math.floor(Math.random() * clips.length)]]);
-  } else {
-    playAct('bounce');
+  // 睡着时被碰了一下：只轻轻晃，不叫醒、不发协议（2026-11-08 17:47 板子）。
+  if (sleeping) {
+    nudge();
+    return;
   }
-  api.poke({ x: Math.round(event.clientX), y: Math.round(event.clientY) });
+
+  // 醒着：反应交给她，body 只报一声。自己不播动作，等 roost 的 act。
+  api.poke({ ts: new Date().toISOString() });
 }
 
 petEl.addEventListener('pointerdown', (event) => {

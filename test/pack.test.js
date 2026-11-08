@@ -198,3 +198,18 @@ test('动作窗口：坏 from/to、to<=from、缺 file、用 url 都报错', () 
     assert.ok(res.errors.length > 0);
   }
 });
+
+test('动作由角色包定义：协议里没有的动作名也收', () => {
+  const dir = makePack(['a.webm', 'w.webm'], {
+    id: 'demo',
+    animations: {
+      breathing: ['a.webm'],
+      actions: { wave: 'w.webm', '超级旋转': [{ file: 'a.webm', from: 1, to: 3 }] },
+    },
+  });
+  const res = inspectPack(dir);
+  assert.equal(res.ok, true, res.errors.join(';'));
+  assert.deepEqual(res.pack.animations.actions.wave, ['w.webm']);
+  assert.deepEqual(res.pack.animations.actions['超级旋转'], [{ file: 'a.webm', from: 1, to: 3 }]);
+  assert.equal(res.warnings.length, 0);
+});

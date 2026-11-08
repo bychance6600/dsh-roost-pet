@@ -60,11 +60,14 @@ const EXIT_DEADLINE_MS = 2500;
 
 const args = parseArgs(process.argv.slice(1));
 
-// userData 固定到仓库内的 .userdata/：受限环境里 %APPDATA% 可能建不出来
-// （Chromium 遇到 EPERM 会直接崩，连 JS 都跑不到），别让启动依赖它。
-// 必须在 app ready 之前设。手动并发测试可用 DSH_ROOST_PET_USERDATA 换一份
-// profile（单实例锁跟着 userData 走，两份互不打扰）。
-app.setPath('userData', process.env.DSH_ROOST_PET_USERDATA || path.join(__dirname, '..', '.userdata'));
+// userData 不写 %APPDATA%：受限环境里它可能建不出来（Chromium 遇到 EPERM 会直接崩，
+// 连 JS 都跑不到）。开发时放仓库 .userdata/；打包后放 exe 旁边的 userdata/（便携）。
+// 必须在 app ready 之前设。手动并发测试可用 DSH_ROOST_PET_USERDATA 换一份 profile
+// （单实例锁跟着 userData 走，两份互不打扰）。
+const defaultUserData = app.isPackaged
+  ? path.join(path.dirname(process.execPath), 'userdata')
+  : path.join(__dirname, '..', '.userdata');
+app.setPath('userData', process.env.DSH_ROOST_PET_USERDATA || defaultUserData);
 
 let win = null;
 let rendererReady = false;
@@ -669,12 +672,16 @@ function startIpc() {
     else saveWindowState();
   });
 
-  // 单击身体：坐标是窗口内 CSS 像素（§protocol §9 澄清），原样转给 roost。
+  // 单击身体：只报一声「ta 戳了一下」，反应由 roost 定（2026-11-08 17:47 板子）。
   ipcMain.on('pet:poke', (_event, payload) => {
-    const x = Number(payload && payload.x);
-    const y = Number(payload && payload.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    sendToRoost({ t: 'poke', x, y });
+    const ts = payload && typeof payload.ts === 'string' ? payload.ts : '';
+    if (!ts) return;
+    const msg = { t: 'poke', ts };
+    if (Number.isFinite(payload.x) && Number.isFinite(payload.y)) {
+      msg.x = payload.x;
+      msg.y = payload.y;
+    }
+    sendToRoost(msg);
   });
 
   // 渲染层放不出包里的文件：stderr 记一笔，握手后也按协议 log 一条（§9 不静默）。

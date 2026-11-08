@@ -49,9 +49,10 @@ function parseFieldList(cell) {
     .filter(Boolean)
     .map((s) => {
       // 文档里写成 `v:number`，整个"名字:类型"在一对反引号里
-      const m = /^`([a-z][a-z0-9]*):([^`]+)`$/.exec(s);
+      // 带 ? 的是可选字段：`x?:number`。没带 ? 的按整条必填。
+      const m = /^`([a-z][a-z0-9]*)(\?)?:([^`]+)`$/.exec(s);
       assert.ok(m, `字段写法不认识：${s}`);
-      return { name: m[1], type: m[2] };
+      return { name: m[1], type: m[3], optional: Boolean(m[2]) };
     });
 }
 
@@ -94,7 +95,7 @@ function assertTableMatchesDoc(docRows, codeTable, label) {
       `${label}：${type} 的字段集合和文档不一致`,
     );
 
-    const docRequired = row.required ? row.fields.map((f) => f.name) : [];
+    const docRequired = row.required ? row.fields.filter((f) => !f.optional).map((f) => f.name) : [];
     assert.deepEqual(
       [...docRequired].sort(),
       [...spec.required].sort(),

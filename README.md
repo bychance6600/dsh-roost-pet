@@ -11,7 +11,7 @@ roost 的身体。
 
 ## 现在到哪一步
 
-第 1 步（透明窗口 + 协议 v1 + 冒泡）已过；现在做到了第 5 步：五档姿态 + 宠物包渲染 + 底噪切换。
+第 1 步（透明窗口 + 协议 v1 + 冒泡）已过；现在做到了第 7 步之前：五档姿态、拖拽抛掷、宠物包热换、动作按窗口播，以及便携包。
 
 已经有的：
 
@@ -24,10 +24,15 @@ roost 的身体。
 - 宠物包：`pet.json` + 图片/webm 帧序列，按 §9 的回退链（`actions.x → click → turn → breathing`）；坏包只 warn 并退回占位团子
 - `act` 的 nod/shake/bounce/shy/laugh/stretch/sleep/wake/quiet/loud 有 CSS 骨架；sleep 走 start → loop → end
 - 底噪切换：呼吸以外，张望 / 打盹 / 伸懒腰每 3–5 分钟换一次（睡、说话、有档位在身时不换）；`quiet` 停换、`loud` 恢复
-- 假 roost 与协议/气泡/宠物包/退出码的单元测试
+- 拖拽：弹簧跟手、松手抛掷（重力 2000、反弹 0.35）、落地挤压；睡着也能拖，拖完回睡姿
+- 单击：醒着只发 poke（反应归 roost），睡着只轻晃
+- 动作队列：不打断当前、相邻同名去重、上限 8、wake/sleep 先清队；动作可以只播 {file,from,to} 窗口
+- 运行时换包（IPC pet:swap-pack）
+- 便携包：scripts/build-portable.js
+- 假 roost 与协议/气泡/物理/宠物包/退出码的单元测试
 - 启动约定（可执行、参数、退出码 0/1/2/3/4）见 [`docs/launch.md`](docs/launch.md)
 
-还没有的（按施工单顺序往后做）：别针与吸附、注意力、双击聊天、设置窗、失败演练与打包。
+还没有的（按施工单顺序往后做）：别针与吸附、注意力、双击聊天框、右键菜单、设置窗、失败演练。
 
 ## 依赖
 
@@ -81,19 +86,21 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 }
 ```
 
-- 一组是一串文件：图片按 110ms 一帧播，`webm`/`mp4` 按片长播；`breathing` 一直循环。
+- 一组是一串文件：图片按 110ms 一帧播，`webm`/`mp4` 按片长播；`breathing` 一直循环。组里有多段时，单次播放随机挑一段（`breathing`/`sleep.loop` 这类循环仍按顺序）。
 - 动作可以只播一段：`"nod": { "file": "nod.webm", "from": 2.0, "to": 6.4 }`（秒，`from`/`to` 可省）。播到 `to` 就停、淡出 0.15 秒，然后回当前档位；不写窗口就整段播。
 - 缺组按 `actions.x → click → turn.left → breathing` 回退；`states.thinking/acting` 没配就按
   `states.x → look → turn.left → breathing` 回退，再缺就画占位团子（一个白团子两只眼）。
 - 路径只许留在包目录里；文件不存在、数组为空、`pet.json` 坏了，都会在 stderr 和 `log` 里说明，并退回占位。
 - 没有包也能跑：`"$NODE" node_modules/electron/cli.js .` 就是占位团子。
 - `--pet-dir` 显式指了坏目录、或显式 `--pet=<id>` 哪儿都找不到 → 退出码 4（配置错）；不显式点名时缺包不算错，画占位团子。
-- 换包不重启还没做（施工单 §9 的要求）。
+- 动作名由角色包定义：协议只规定 roost 会发哪十个 act 名，包里叫什么随意。加一个动作 = 放 webm 进包目录 + `pet.json` 的 `actions` 里加一行 + 重启 body。
+- 换包不重启：主进程 IPC `pet:swap-pack`（`{dir}`）校验后热换；开发时可以直接在控制台调 `window.__petSwapPack("C:/path/to/pack")`。
 
 ## 交互（第 1 步之后补的）
 
-- 单击身体：播包里 `click` 的一段（没包就轻跳一下），同时发 `poke`（窗口内 CSS 像素）；不出声。
-- 拖拽：按住身体拖动窗口；松手后窗口就停在拖到的位置（重力/抛掷是施工单 §7 后续步骤）。
+- 单击身体：**反应由 roost 定**。醒着时只发 `{"t":"poke","ts":"<ISO 时间>"}`，body 自己不播动作、不出声；睡着时被戳只轻轻晃 1–2px（300ms），不叫醒、不发协议。
+- 单击去重、点一次算几次，都由 roost 按 `ts` 决定。
+- 拖拽：按住身体拖动窗口（弹簧跟手），松手按最近 150ms 的速度抛掷，带重力、边缘反弹和落地挤压；不出屏。
 - 睡着时也能拖，拖完回到睡姿。
 
 ## Windows 上的两个平台细节
@@ -121,6 +128,19 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 
 `--size=1.2`、`--position=...`、`--hold=4500`（每条气泡看多久再收尾）会透传给 body。
 退出码 0 表示这一轮断言全过。
+
+## 打包（便携版）
+
+```bash
+"$NODE" scripts/build-portable.js
+```
+
+产物：
+
+- `dist/dsh-roost-pet-win32-x64/`：解压即跑，里面是 `dsh-roost-pet.exe`
+- `dist/dsh-roost-pet-v<version>-win32-x64.zip`
+
+包内只有 `resources/app.asar`（package.json + src + lib）和 Electron 本体，**不带** `pets/`、`docs/`、`.userdata/`、`node_modules/`。解压到 `C:\Users\<你>\.dsh-roost\pet\`，由 roost 用 `pet.path` 拉起；窗口位置和单实例 pid 写在 exe 旁边的 `userdata/`。图标先占位（Electron 默认）。
 
 ## 测试
 

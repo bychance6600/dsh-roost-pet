@@ -14,6 +14,7 @@
     "fake": "node tools/fake-roost.js"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
     "electron": "43.3.0"
   }
 }
