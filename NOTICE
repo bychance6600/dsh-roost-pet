@@ -1,0 +1,10 @@
+dsh-roost-pet
+Copyright (c) 2026 bychance6600
+
+本体代码：MIT，见 LICENSE。
+
+第三方：
+- Electron 43.3.0（MIT）。便携包 `dist/` 与 zip 里包含其二进制；分发时请一并保留
+  `electron/LICENSE`。
+- 宠物素材（`assets/`、`pets/` 里的 webm）：来自 dsh-pet 素材，CC BY-NC-SA 4.0，
+  仅限非商业使用。本仓库不包含素材；分发本仓库或 zip 时不要打包素材。

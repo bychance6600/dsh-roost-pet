@@ -40,8 +40,8 @@ Electron 钉死在 `43.3.0`（精确版本，不带 `^`）。这台机器的 `PA
 用绝对路径叫：
 
 ```bash
-NODE="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe"
-PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.mjs"
+NODE="D:/DeepSeek Harness/resources/runtime/primary-runtime/dependencies/node/bin/node.exe"
+PNPM="D:/DeepSeek Harness/resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.mjs"
 
 "$NODE" "$PNPM" install
 "$NODE" node_modules/electron/cli.js .
