@@ -279,6 +279,13 @@ function runAmbient() {
 // 动作
 // ---------------------------------------------------------------------------
 
+// 动作占画面：动作片段播放期间，状态帧只换标签不切画面（16:31 / ①）；
+// 片段不足 1.2 秒就停在末帧补足（②）；结束后回当前档位，不回呼吸（③）。
+const ACTION_MIN_MS = 1200;
+let actionPlaying = false;
+let actionSeq = 0;
+let actionTimer = null;
+
 const ACT_MS = {
   nod: 420,
   shake: 420,
@@ -290,6 +297,73 @@ const ACT_MS = {
   quiet: 0,
   loud: 480,
 };
+
+function beginActionWindow() {
+  actionPlaying = true;
+  actionSeq += 1;
+  return actionSeq;
+}
+
+/** 回当前档位的画面：waiting 且 roost 仍判睡就先收睡姿。 */
+function resumeScene() {
+  if (sleeping) return;
+  if (currentState === 'waiting' && roostSleeping) {
+    enterSleep();
+    return;
+  }
+  resumeStatePlayback();
+}
+
+/** 收掉动作占位：回当前档位（睡着时让睡姿继续压着）。 */
+function endActionWindow(seq) {
+  if (seq !== actionSeq || !actionPlaying) return;
+  actionPlaying = false;
+  if (actionTimer) {
+    clearTimeout(actionTimer);
+    actionTimer = null;
+  }
+  if (sleeping) return;
+  resumeScene();
+}
+
+/** 作废当前动作窗口（换包、睡着、被别的播放接管时）。 */
+function cancelActionWindow() {
+  actionSeq += 1;
+  actionPlaying = false;
+  if (actionTimer) {
+    clearTimeout(actionTimer);
+    actionTimer = null;
+  }
+}
+
+/** 播一次动作片段；播完不足 1.2 秒就停在末帧补足，再回档位。 */
+function playActionClip(name) {
+  const urls = resolveGroup(name);
+  if (!urls || !urls.length) return false;
+
+  stopPlayback();
+  const token = ++seqToken;
+  const seq = beginActionWindow();
+  const startedAt = performance.now();
+
+  runSequence(urls, { token }).then((result) => {
+    if (seq !== actionSeq) return;
+    if (result === 'failed') {
+      fallBackToPlaceholder();
+      endActionWindow(seq);
+      return;
+    }
+    if (result !== 'done') {
+      // 被别的播放接管，不归这段动作管
+      endActionWindow(seq);
+      return;
+    }
+    const left = Math.max(0, ACTION_MIN_MS - (performance.now() - startedAt));
+    actionTimer = setTimeout(() => endActionWindow(seq), left);
+  });
+
+  return true;
+}
 
 function playAct(action) {
   if (action === 'sleep') {
@@ -327,12 +401,13 @@ function playAct(action) {
 
   const specific = pack && pack.animations && pack.animations.actions && pack.animations.actions[action];
   if (sleeping) return;
-  if (specific) playOnce(`actions.${action}`);
+  if (specific) playActionClip(`actions.${action}`);
 }
 
 function enterSleep() {
   if (sleeping) return;
   sleeping = true;
+  cancelActionWindow();
   cancelAmbient();
   petEl.dataset.sleep = '1';
   delete petEl.dataset.act;
@@ -424,6 +499,8 @@ function scheduleRevert() {
         return;
       }
       showState('waiting', '');
+      // §6：done/error 只改姿态，回 waiting 时画面也要回到 waiting 档。
+      if (!actionPlaying) resumeScene();
     },
     2500 + Math.random() * 2500,
   );
@@ -462,6 +539,12 @@ api.onState(({ state, why }) => {
 
   if (state === 'done' || state === 'error') {
     scheduleRevert();
+  }
+
+  // 动作片段还在演：只更新标签，画面等动作结束再切（16:31 / ①）。
+  if (actionPlaying) return;
+
+  if (state === 'done' || state === 'error') {
     resumeStatePlayback();
     return;
   }
@@ -634,6 +717,7 @@ window.addEventListener('error', (event) => {
 
 /** 装上一个包：换掉当前画面与尺寸，再按当前处境重新起播。 */
 function applyPack(packInfo) {
+  cancelActionWindow();
   stopPlayback();
   pack = packInfo || null;
   petEl.dataset.pack = packInfo ? '1' : '0';
