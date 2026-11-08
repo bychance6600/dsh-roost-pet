@@ -108,12 +108,23 @@ body {
 
 #pet {
   position: relative;
+  cursor: grab;
+  touch-action: none;
   width: calc(196px * var(--scale) * var(--pack-size));
   height: calc(196px * var(--scale) * var(--pack-size));
   transform-origin: 50% 88%;
   transition:
     transform 220ms ease,
     filter 220ms ease;
+}
+
+#pet:active {
+  cursor: grabbing;
+}
+
+#pet-video,
+#pet-img {
+  pointer-events: none;
 }
 
 /* 占位团子：包里没有 breathing 之类的东西时它就是身体 */

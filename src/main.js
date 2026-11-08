@@ -64,6 +64,10 @@ let handshaken = false;
 let lastState = null;
 let saveTimer = null;
 let stdinStop = null;
+let dragState = null; // 拖拽中：记下指针起点和窗口起点
+let hitBox = null; // 身体在窗口里的矩形（CSS 像素），渲染层给
+let hitPoll = null; // 光标轮询：click-through 窗口收不到指针消息时兜底
+let ignoringMouse = true;
 
 const decoder = new LineDecoder();
 const bubbles = new BubbleQueue({
@@ -477,6 +481,8 @@ function createWindow() {
 
   // §13：Windows 上要 forward:true 才能继续收到 mousemove，才谈得上"指针在身体上时关穿透"。
   if (args.clickThrough) win.setIgnoreMouseEvents(true, { forward: true });
+  ignoringMouse = Boolean(args.clickThrough);
+  startHitPoll();
 
   win.once('ready-to-show', () => {
     // 不抢焦点：开机时别把她正在打字的窗口顶掉。
@@ -539,12 +545,63 @@ function startIpc() {
     // §4.2：--click-through=0 只关掉"初始穿透"，命中切换照常工作。
     // 整窗吃点击只是调试窗口时的入口状态，不是一条会驻留的默认路径。
     if (!win || win.isDestroyed()) return;
+    if (dragState) return; // 拖拽中必须一直能收鼠标，松手再说
+    ignoringMouse = !inside; // 和轮询保持同一个事实，别各记各的
     win.setIgnoreMouseEvents(!inside, { forward: true });
+  });
+
+  ipcMain.on('pet:hitbox', (_event, box) => {
+    const n = (v) => Number(v);
+    if (!box) return;
+    const x = n(box.x);
+    const y = n(box.y);
+    const w = n(box.w);
+    const h = n(box.h);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return;
+    hitBox = { x, y, w, h };
   });
 
   ipcMain.on('pet:bubble-height', (_event, height) => {
     const n = Number(height);
     if (Number.isFinite(n)) resizeForBubble(n);
+  });
+
+  // 拖拽：渲染层给指针的屏幕坐标，主进程只负责挪窗口（§7）。
+  ipcMain.on('pet:drag-start', (_event, payload) => {
+    if (!win || win.isDestroyed()) return;
+    const x = Number(payload && payload.x);
+    const y = Number(payload && payload.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const [winX, winY] = win.getPosition();
+    dragState = { pointerX: x, pointerY: y, winX, winY };
+    win.setIgnoreMouseEvents(false);
+  });
+
+  ipcMain.on('pet:drag-move', (_event, payload) => {
+    if (!win || win.isDestroyed() || !dragState) return;
+    const x = Number(payload && payload.x);
+    const y = Number(payload && payload.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const dx = Math.round(x - dragState.pointerX);
+    const dy = Math.round(y - dragState.pointerY);
+    win.setPosition(dragState.winX + dx, dragState.winY + dy);
+  });
+
+  ipcMain.on('pet:drag-end', () => {
+    if (!dragState) return;
+    dragState = null;
+    // 松手先恢复穿透；光标要是还压在身体上，下一拍轮询会把穿透关回去。
+    ignoringMouse = true;
+    if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(true, { forward: true });
+    saveWindowState();
+  });
+
+  // 单击身体：坐标是窗口内 CSS 像素（§protocol §9 澄清），原样转给 roost。
+  ipcMain.on('pet:poke', (_event, payload) => {
+    const x = Number(payload && payload.x);
+    const y = Number(payload && payload.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    sendToRoost({ t: 'poke', x, y });
   });
 
   // 渲染层放不出包里的文件：stderr 记一笔，握手后也按协议 log 一条（§9 不静默）。
@@ -554,6 +611,29 @@ function startIpc() {
     log('warn', `渲染层报问题：${kind}${detail ? `：${detail}` : ''}`);
     sendToRoost({ t: 'log', level: 'warn', msg: `body: ${kind}${detail ? `：${detail}` : ''}` });
   });
+}
+
+/**
+ * 光标轮询（每 50ms）。Windows 上带 forward 的 click-through 窗口并不总能
+ * 收到 pointermove——窗口不在前台时转发会断，指针压上身体也不会关穿透。
+ * 所以主进程自己看光标在不在身体矩形里，作为命中切换的兜底。
+ */
+function startHitPoll() {
+  if (hitPoll) return;
+  hitPoll = setInterval(() => {
+    if (!win || win.isDestroyed() || dragState || !hitBox) return;
+    const point = screen.getCursorScreenPoint();
+    const bounds = win.getBounds();
+    const inside =
+      point.x >= bounds.x + hitBox.x &&
+      point.x <= bounds.x + hitBox.x + hitBox.w &&
+      point.y >= bounds.y + hitBox.y &&
+      point.y <= bounds.y + hitBox.y + hitBox.h;
+    if (inside === !ignoringMouse) return;
+    ignoringMouse = !inside;
+    win.setIgnoreMouseEvents(!inside, { forward: true });
+  }, 50);
+  if (hitPoll.unref) hitPoll.unref();
 }
 
 // ---------------------------------------------------------------------------
@@ -567,6 +647,10 @@ function shutdown(reason) {
   log('info', `退出：${reason}（退出码 ${code}）`);
 
   if (stdinStop) stdinStop();
+  if (hitPoll) {
+    clearInterval(hitPoll);
+    hitPoll = null;
+  }
   saveWindowState();
   removePidRecord();
   bubbles.dispose();

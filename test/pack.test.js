@@ -119,3 +119,43 @@ test('回退链：actions.nod → click → turn.left → breathing', () => {
   assert.equal(pickAnimation(none, 'click'), null);
   assert.equal(pickAnimation(null, 'click'), null);
 });
+
+test('states：thinking / acting 可单独配，形状错要报错', () => {
+  const dir = makePack(['a.webm', 'b.webm'], {
+    id: 'x',
+    animations: { breathing: ['a.webm'], states: { thinking: ['b.webm'] } },
+  });
+  const res = inspectPack(dir);
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.pack.animations.states, { thinking: ['b.webm'] });
+
+  const bad = inspectPack(
+    makePack(['a.webm'], { id: 'x', animations: { breathing: ['a.webm'], states: ['a.webm'] } }),
+  );
+  assert.equal(bad.ok, false);
+  assert.match(bad.errors.join(';'), /animations\.states/);
+
+  const empty = inspectPack(
+    makePack(['a.webm'], { id: 'x', animations: { breathing: ['a.webm'], states: {} } }),
+  );
+  assert.equal(empty.ok, false);
+});
+
+test('回退链：states.thinking → look → turn.left → breathing', () => {
+  const mk = (animations) => inspectPack(makePack(['a.webm', 'b.webm', 'c.webm'], { id: 'x', animations })).pack;
+
+  const full = mk({
+    breathing: ['a.webm'],
+    look: ['b.webm'],
+    turn: { left: ['c.webm'] },
+    states: { acting: ['c.webm'] },
+  });
+  assert.deepEqual(pickAnimation(full, 'states.acting'), ['c.webm']);
+  assert.deepEqual(pickAnimation(full, 'states.thinking'), ['b.webm']);
+
+  const noLook = mk({ breathing: ['a.webm'], turn: { left: ['c.webm'] } });
+  assert.deepEqual(pickAnimation(noLook, 'states.thinking'), ['c.webm']);
+
+  const onlyBreathing = mk({ breathing: ['a.webm'] });
+  assert.deepEqual(pickAnimation(onlyBreathing, 'states.thinking'), ['a.webm']);
+});

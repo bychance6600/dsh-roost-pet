@@ -35,7 +35,9 @@ const FRAME_MS = 110;
 let bodyHeight = 300;
 let pack = null;
 let quiet = false;
-let sleeping = false;
+let sleeping = false;          // 现在是不是睡姿
+let roostSleeping = false;     // roost 判不判睡（只认 act sleep/wake，不按时间猜）
+let currentState = 'waiting';
 let revertTimer = null;
 let actTimer = null;
 let pendingRevert = false;
@@ -83,6 +85,13 @@ function resolveGroup(name) {
 
   if (name === 'sleep.end') {
     return (a.sleep && a.sleep.end) || a.breathing || null;
+  }
+
+  // states.thinking → look → turn.left → breathing：没配档位也别静默不动。
+  if (name.startsWith('states.')) {
+    const key = name.slice('states.'.length);
+    const specific = a.states && a.states[key];
+    return specific || a.look || (a.turn && a.turn.left) || a.breathing || null;
   }
 
   return a[name] || a.breathing || null;
@@ -159,9 +168,8 @@ function stopPlayback() {
   image.hidden = true;
 }
 
-/** 播放一次某组画面；播完回到呼吸。 */
-function playOnce(name, { thenIdle = true } = {}) {
-  const urls = resolveGroup(name);
+/** 播一串画面；播完回到呼吸。 */
+function playUrlsOnce(urls, { thenIdle = true } = {}) {
   if (!urls || !urls.length) return false;
 
   stopPlayback();
@@ -177,8 +185,7 @@ function playOnce(name, { thenIdle = true } = {}) {
   return true;
 }
 
-function playLoop(name) {
-  const urls = resolveGroup(name);
+function playUrlsLoop(urls) {
   if (!urls || !urls.length) return false;
 
   stopPlayback();
@@ -187,6 +194,15 @@ function playLoop(name) {
     if (result === 'failed') fallBackToPlaceholder();
   });
   return true;
+}
+
+/** 播放一次某组画面；播完回到呼吸。 */
+function playOnce(name, opts) {
+  return playUrlsOnce(resolveGroup(name), opts);
+}
+
+function playLoop(name) {
+  return playUrlsLoop(resolveGroup(name));
 }
 
 function startIdle() {
@@ -277,10 +293,12 @@ const ACT_MS = {
 
 function playAct(action) {
   if (action === 'sleep') {
+    roostSleeping = true;
     enterSleep();
     return;
   }
   if (action === 'wake') {
+    roostSleeping = false;
     leaveSleep();
   }
   if (action === 'quiet') {
@@ -318,7 +336,11 @@ function enterSleep() {
   cancelAmbient();
   petEl.dataset.sleep = '1';
   delete petEl.dataset.act;
+  playSleepLoop();
+}
 
+/** 睡姿的循环画面（拖完落地、临时唤回睡姿时也走这里）。 */
+function playSleepLoop() {
   if (!hasPack()) return;
   const s = pack.animations.sleep;
   if (!s) {
@@ -346,6 +368,7 @@ function enterSleep() {
 function leaveSleep() {
   if (!sleeping) return;
   sleeping = false;
+  currentState = 'waiting';
   delete petEl.dataset.sleep;
 
   if (pendingRevert) {
@@ -383,10 +406,7 @@ api.onBubbleHide(() => {
 // ---------------------------------------------------------------------------
 
 function showState(state, why) {
-  if (state !== 'waiting') {
-    cancelAmbient();
-    if (!sleeping) startIdle(); // 底噪停下，回呼吸当底
-  }
+  if (state !== 'waiting') cancelAmbient();
   petEl.dataset.state = state;
   status.hidden = false;
   status.dataset.state = state;
@@ -409,16 +429,137 @@ function scheduleRevert() {
   );
 }
 
+/** 收起睡姿，但不动 roost 的醒睡判断：thinking/acting 到了就先睁眼。 */
+function wakePose() {
+  if (!sleeping) return;
+  sleeping = false;
+  pendingRevert = false;
+  delete petEl.dataset.sleep;
+  stopPlayback();
+}
+
+/** 按当前档位恢复循环画面：想/做播档位，其余呼吸。 */
+function resumeStatePlayback() {
+  if (sleeping) return;
+  if (currentState === 'thinking' || currentState === 'acting') {
+    if (playLoop(`states.${currentState}`)) return;
+  }
+  startIdle();
+}
+
 api.onState(({ state, why }) => {
   if (!STATES.has(state)) return;
+  currentState = state;
+
+  // 判据只用 roost 推来的 state/act：她在想/在做，就不该还摊着睡。
+  if (state === 'thinking' || state === 'acting') wakePose();
+
   pendingRevert = false;
   showState(state, why);
   clearTimeout(revertTimer);
-  if (state === 'done' || state === 'error') scheduleRevert();
-  if (state === 'waiting') scheduleAmbient();
+
+  if (state === 'done' || state === 'error') {
+    scheduleRevert();
+    resumeStatePlayback();
+    return;
+  }
+
+  if (state === 'waiting') {
+    // roost 仍判睡（最后一次 act 是 sleep）就收回睡姿；它说不睡才起底噪。
+    if (roostSleeping) enterSleep();
+    else if (!sleeping) {
+      startIdle();
+      scheduleAmbient();
+    }
+    return;
+  }
+
+  resumeStatePlayback();
 });
 
 api.onAct(({ action }) => playAct(action));
+
+// ---------------------------------------------------------------------------
+// 拖拽与单击：拖走时用主进程 setPosition，单击播 click 并报 poke
+// ---------------------------------------------------------------------------
+
+const DRAG_THRESHOLD = 4; // 超过几个 CSS 像素才算拖，不算点
+let dragSession = null;
+let dragRestore = null; // 拖完回到哪：'sleep' | 'state' | 'idle'
+
+function beginDrag(event) {
+  dragSession = { startX: event.screenX, startY: event.screenY, moved: false };
+  try {
+    petEl.setPointerCapture(event.pointerId);
+  } catch {
+    /* 没有捕获也能拖 */
+  }
+  api.dragStart({ x: event.screenX, y: event.screenY });
+
+  const urls = resolveGroup('drag');
+  if (urls && urls.length) {
+    dragRestore = sleeping
+      ? 'sleep'
+      : currentState === 'thinking' || currentState === 'acting'
+        ? 'state'
+        : 'idle';
+    playLoop('drag');
+  }
+}
+
+function endDrag(event, { cancelled = false } = {}) {
+  const session = dragSession;
+  if (!session) return;
+  dragSession = null;
+  try {
+    petEl.releasePointerCapture(event.pointerId);
+  } catch {
+    /* 已经松开 */
+  }
+  api.dragEnd();
+
+  if (session.moved) {
+    if (dragRestore === 'sleep') playSleepLoop();
+    else if (dragRestore === 'state') resumeStatePlayback();
+    else startIdle();
+    dragRestore = null;
+    scheduleAmbient();
+    return;
+  }
+
+  dragRestore = null;
+  if (cancelled) return;
+
+  // 单击：包里点一次（随机挑一段），没包就用 CSS 骨架轻跳一下。
+  const clips = resolveGroup('click');
+  if (clips && clips.length) {
+    playUrlsOnce([clips[Math.floor(Math.random() * clips.length)]]);
+  } else {
+    playAct('bounce');
+  }
+  api.poke({ x: Math.round(event.clientX), y: Math.round(event.clientY) });
+}
+
+petEl.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  beginDrag(event);
+});
+
+petEl.addEventListener('pointermove', (event) => {
+  if (!dragSession) return;
+  if (
+    !dragSession.moved &&
+    Math.hypot(event.screenX - dragSession.startX, event.screenY - dragSession.startY) >
+      DRAG_THRESHOLD
+  ) {
+    dragSession.moved = true;
+  }
+  if (dragSession.moved) api.dragMove({ x: event.screenX, y: event.screenY });
+});
+
+petEl.addEventListener('pointerup', (event) => endDrag(event));
+petEl.addEventListener('pointercancel', (event) => endDrag(event, { cancelled: true }));
 
 // ---------------------------------------------------------------------------
 // 命中：指针在身体上才吃点击，其余时候穿透
@@ -436,6 +577,23 @@ function reportHit(inside) {
   lastHit = inside;
   api.hit(inside);
 }
+
+// Windows 上 click-through 窗口收不到指针消息时，主进程靠这个矩形轮询光标。
+// 多显示器 / 高 DPI 下都是窗口内 CSS 像素，主进程自己加上窗口位置。
+function reportHitBox() {
+  const r = petEl.getBoundingClientRect();
+  api.hitBox({
+    x: Math.round(r.left),
+    y: Math.round(r.top),
+    w: Math.round(r.width),
+    h: Math.round(r.height),
+  });
+}
+
+window.addEventListener('resize', () => {
+  reportHitBox();
+  reportHeightSoon();
+});
 
 window.addEventListener(
   'pointermove',
@@ -470,6 +628,7 @@ api.onInit(({ scale, bodyHeight: body, bubbleMin, ambientMinMs, ambientMaxMs, pa
   }
 
   reportHeight();
+  reportHitBox();
   scheduleAmbient();
 });
 

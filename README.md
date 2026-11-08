@@ -69,6 +69,7 @@ pets/
     "look": ["breathing-2.png"],
     "click": ["nod.webm"],
     "turn": { "left": ["look-left.webm"], "right": ["look-right.webm"] },
+    "states": { "thinking": ["think.webm"], "acting": ["act.webm"] },
     "sleep": { "start": ["s1.webm"], "loop": ["s2.webm"], "end": ["s3.webm"] },
     "actions": { "nod": ["nod.webm"], "shake": ["shake.webm"] }
   }
@@ -76,11 +77,18 @@ pets/
 ```
 
 - 一组是一串文件：图片按 110ms 一帧播，`webm`/`mp4` 按片长播；`breathing` 一直循环。
-- 缺组按 `actions.x → click → turn.left → breathing` 回退，再缺就画占位团子（一个白团子两只眼）。
+- 缺组按 `actions.x → click → turn.left → breathing` 回退；`states.thinking/acting` 没配就按
+  `states.x → look → turn.left → breathing` 回退，再缺就画占位团子（一个白团子两只眼）。
 - 路径只许留在包目录里；文件不存在、数组为空、`pet.json` 坏了，都会在 stderr 和 `log` 里说明，并退回占位。
 - 没有包也能跑：`"$NODE" node_modules/electron/cli.js .` 就是占位团子。
 - `--pet-dir` 显式指了坏目录 → 退出码 4（配置错）；默认位置缺包不算错。
 - 换包不重启还没做（施工单 §9 的要求）。
+
+## 交互（第 1 步之后补的）
+
+- 单击身体：播包里 `click` 的一段（没包就轻跳一下），同时发 `poke`（窗口内 CSS 像素）；不出声。
+- 拖拽：按住身体拖动窗口；松手后窗口就停在拖到的位置（重力/抛掷是施工单 §7 后续步骤）。
+- 睡着时也能拖，拖完回到睡姿。
 
 ## Windows 上的两个平台细节
 
