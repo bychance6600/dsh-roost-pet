@@ -22,6 +22,8 @@ const { BubbleQueue } = require('../lib/bubbles');
 const { EXIT, exitCodeFor } = require('../lib/exit');
 const { parseArgs } = require('../lib/args');
 const { serializePidRecord, parsePidRecord } = require('../lib/pidfile');
+const { inspectPack } = require('../lib/pack');
+const { pathToFileURL } = require('node:url');
 
 // 启动期就把 console.* 全接到 stderr：只要有一行 console.log 落到 stdout，
 // roost 那一侧的协议流就坏了。§1.6 的空行跳过只是兜底——Electron 自己
@@ -154,6 +156,8 @@ function handleLine(line) {
       if (!handshaken) {
         handshaken = true;
         log('info', `握手完成：roost=${msg.roost}`);
+        // 启动期就发现的坏包，握手后再按协议补一条 log（§9：不静默）。
+        if (petPackProblem) sendToRoost({ t: 'log', level: 'warn', msg: petPackProblem });
       }
       return;
     }
@@ -314,6 +318,63 @@ function describeLockHolder() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 宠物包（§9）：<repo>/pets/<id>/pet.json，或 --pet-dir=<目录> 直接指。
+// 没有包就画占位团子；包坏了报错但不崩。
+// ---------------------------------------------------------------------------
+
+let petPack = null;
+let petPackProblem = '';
+
+function packDir() {
+  return args.petDir ? path.resolve(args.petDir) : path.join(__dirname, '..', 'pets', args.pet);
+}
+
+function loadPetPack() {
+  const dir = packDir();
+
+  if (args.petDir) {
+    try {
+      if (!fs.statSync(dir).isDirectory()) throw new Error('不是目录');
+    } catch (err) {
+      // §12：宠物包根目录不可读 → 参数/配置错，退出码 4。
+      log('error', `宠物包目录不可读：${dir}（${err.message}）`);
+      return false;
+    }
+  }
+
+  const res = inspectPack(dir);
+  if (!res.ok) {
+    petPackProblem = `宠物包没加载（${dir}）：${res.errors.join('；')}`;
+    log('warn', petPackProblem);
+    if (args.petDir) return false; // 显式指了却坏了：按配置错退
+    return true; // 默认包缺失不算错：画占位
+  }
+
+  for (const w of res.warnings) log('warn', `宠物包：${w}`);
+  petPack = res.pack;
+  log('info', `宠物包已加载：${petPack.id}/${petPack.name}，组 ${Object.keys(petPack.animations).join(',')}`);
+  return true;
+}
+
+/** 给 renderer 的包描述：路径换成 file://，渲染层不用知道盘上的目录结构。 */
+function packForRenderer() {
+  if (!petPack) return null;
+  const url = (rel) => pathToFileURL(path.join(petPack.dir, rel)).href;
+  const list = (arr) => arr.map(url);
+
+  const animations = {};
+  for (const [key, value] of Object.entries(petPack.animations)) {
+    if (Array.isArray(value)) animations[key] = list(value);
+    else {
+      animations[key] = {};
+      for (const [sub, files] of Object.entries(value)) animations[key][sub] = list(files);
+    }
+  }
+
+  return { id: petPack.id, name: petPack.name, size: petPack.size, animations };
+}
+
 function readWindowState() {
   try {
     const raw = fs.readFileSync(userDataFile('window.json'), 'utf8');
@@ -465,6 +526,7 @@ function startIpc() {
       bodyHeight: g.body,
       bubbleMin: g.bubble,
       clickThrough: args.clickThrough,
+      pack: packForRenderer(),
     });
     flushOutbox();
     if (lastState) win.webContents.send('pet:state', lastState);
@@ -481,6 +543,14 @@ function startIpc() {
   ipcMain.on('pet:bubble-height', (_event, height) => {
     const n = Number(height);
     if (Number.isFinite(n)) resizeForBubble(n);
+  });
+
+  // 渲染层放不出包里的文件：stderr 记一笔，握手后也按协议 log 一条（§9 不静默）。
+  ipcMain.on('pet:issue', (_event, payload) => {
+    const kind = payload && payload.kind ? String(payload.kind) : 'renderer-issue';
+    const detail = payload && payload.detail ? String(payload.detail) : '';
+    log('warn', `渲染层报问题：${kind}${detail ? `：${detail}` : ''}`);
+    sendToRoost({ t: 'log', level: 'warn', msg: `body: ${kind}${detail ? `：${detail}` : ''}` });
   });
 }
 
@@ -530,6 +600,12 @@ function boot() {
   if (!args.protocolOk) {
     log('error', `不认的协议版本：--protocol=${args.protocol ?? '(非整数)'}，只认 1`);
     shutdown('protocol-error');
+    return;
+  }
+
+  // §9：宠物包装不上就画占位；但 --pet-dir 显式指了坏目录，按配置错退 4。
+  if (!loadPetPack()) {
+    shutdown('config-error');
     return;
   }
 

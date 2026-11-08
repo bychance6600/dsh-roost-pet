@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:"
+      content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: file:; media-src 'self' file:"
     />
     <title>dsh-roost-pet</title>
     <link rel="stylesheet" href="style.css" />
@@ -18,9 +18,14 @@
       </div>
 
       <div id="body-zone">
-        <div id="pet" aria-hidden="true">
-          <span class="eye left"></span>
-          <span class="eye right"></span>
+        <div id="pet" data-state="waiting" data-act="" aria-hidden="true">
+          <!-- 没有宠物包时画的占位团子；有包就藏起来，换成帧画面。 -->
+          <div id="pet-shape" class="placeholder">
+            <span class="eye left"></span>
+            <span class="eye right"></span>
+          </div>
+          <video id="pet-video" muted playsinline hidden></video>
+          <img id="pet-img" alt="" hidden />
         </div>
       </div>
     </div>

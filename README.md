@@ -11,19 +11,22 @@ roost 的身体。
 
 ## 现在到哪一步
 
-第 1 步：透明窗口 + 协议 v1 + 能冒泡。
+第 1 步（透明窗口 + 协议 v1 + 冒泡）已过；现在做到了第 5 步：五档姿态 + 宠物包渲染。
 
 已经有的：
 
 - 透明、无边框、置顶、跳过任务栏的小窗（360×420，上面 120px 留给气泡，下面 300px 给身体）
 - 默认整窗穿透；指针压到身体上才收点击（`setIgnoreMouseEvents(true, { forward: true })` + IPC 切换）
-- 协议 v1 的握手、`say` 冒泡、`state` 只读显示、`act` 收下不演、`bye` / stdin EOF / 关窗退出
+- 协议 v1 的握手、`say` 冒泡、`state` 只读显示、`act` 收下、`bye` / stdin EOF / 关窗退出
 - 气泡时长 `clamp(字数/12, 2.5s, 10s)`，长句往上长窗口，不裁字
 - 队列 20 条、`id+seq` 去重、坏消息只 warn 不崩
-- 假 roost 与协议/气泡/退出码的单元测试
-- 启动约定（可执行、参数、退出码 0/3/4/1）见 [`docs/launch.md`](docs/launch.md)
+- 五档姿态（thinking / acting / waiting / error / done），done 与 error 只改姿态和只读标签，2–5 秒自己回 waiting
+- 宠物包：`pet.json` + 图片/webm 帧序列，按 §9 的回退链（`actions.x → click → turn → breathing`）；坏包只 warn 并退回占位团子
+- `act` 的 nod/shake/bounce/shy/laugh/stretch/sleep/wake/quiet/loud 有 CSS 骨架；sleep 走 start → loop → end
+- 假 roost 与协议/气泡/宠物包/退出码的单元测试
+- 启动约定（可执行、参数、退出码 0/1/2/3/4）见 [`docs/launch.md`](docs/launch.md)
 
-还没有的（按施工单顺序往后做）：拖拽与物理、别针与吸附、注意力、双击聊天、设置窗、宠物包渲染、打包。
+还没有的（按施工单顺序往后做）：拖拽与物理、别针与吸附、注意力、双击聊天、设置窗、底噪切换、运行时换包、打包。
 
 ## 依赖
 
@@ -40,8 +43,43 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 
 （`pnpm start` 也行，前提是 node 在 `PATH` 里。）
 
-启动参数：`--size=1.2`、`--position=bottom-right|bottom-left|top-right|top-left`、
-`--click-through=0`、`--pet=<包 id>`。
+启动参数：`--size=1.2`、`--position=bottom-right|bottom-left|top-right|top-left|center`、
+`--click-through=0`、`--pet=<包 id>`、`--pet-dir=<目录>`（调试用：直接指一个包目录）。
+
+## 宠物包
+
+素材不入库，所以仓库里没有 `pets/`。摆一个包进去就能看：
+
+```
+pets/
+  my-pet/
+    pet.json
+    breathing-1.png  breathing-2.png
+    nod.webm
+```
+
+```json
+{
+  "id": "my-pet",
+  "name": "我的宠物",
+  "size": 1,
+  "animations": {
+    "breathing": ["breathing-1.png", "breathing-2.png"],
+    "look": ["breathing-2.png"],
+    "click": ["nod.webm"],
+    "turn": { "left": ["look-left.webm"], "right": ["look-right.webm"] },
+    "sleep": { "start": ["s1.webm"], "loop": ["s2.webm"], "end": ["s3.webm"] },
+    "actions": { "nod": ["nod.webm"], "shake": ["shake.webm"] }
+  }
+}
+```
+
+- 一组是一串文件：图片按 110ms 一帧播，`webm`/`mp4` 按片长播；`breathing` 一直循环。
+- 缺组按 `actions.x → click → turn.left → breathing` 回退，再缺就画占位团子（一个白团子两只眼）。
+- 路径只许留在包目录里；文件不存在、数组为空、`pet.json` 坏了，都会在 stderr 和 `log` 里说明，并退回占位。
+- 没有包也能跑：`"$NODE" node_modules/electron/cli.js .` 就是占位团子。
+- `--pet-dir` 显式指了坏目录 → 退出码 4（配置错）；默认位置缺包不算错。
+- 换包不重启还没做（施工单 §9 的要求，排在底噪之后）。
 
 ## Windows 上的两个平台细节
 

@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('pet', {
   hit: (inside) => ipcRenderer.send('pet:hit', Boolean(inside)),
   /** 气泡需要多高（含身体），主进程据此往上长窗口。 */
   bubbleHeight: (height) => ipcRenderer.send('pet:bubble-height', Number(height)),
+  /** 渲染层自己的麻烦（包里的文件放不出来等），交给主进程报给 roost。 */
+  issue: (payload) => ipcRenderer.send('pet:issue', payload),
 
   onInit: subscribe('pet:init'),
   onBubble: subscribe('pet:bubble'),
