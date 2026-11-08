@@ -23,6 +23,14 @@ const { EXIT, exitCodeFor } = require('../lib/exit');
 const { parseArgs } = require('../lib/args');
 const { serializePidRecord, parsePidRecord } = require('../lib/pidfile');
 const { inspectPack } = require('../lib/pack');
+const {
+  springStep,
+  trimTrail,
+  estimateReleaseVelocity,
+  throwStep,
+  throwSubsteps,
+  squashDepth,
+} = require('../lib/physics');
 const { pathToFileURL } = require('node:url');
 
 // 启动期就把 console.* 全接到 stderr：只要有一行 console.log 落到 stdout，
@@ -65,6 +73,7 @@ let lastState = null;
 let saveTimer = null;
 let stdinStop = null;
 let dragState = null; // 拖拽中：记下指针起点和窗口起点
+let throwLoop = null; // 抛掷帧循环：松手之后重力/反弹跑在这儿
 let hitBox = null; // 身体在窗口里的矩形（CSS 像素），渲染层给
 let hitPoll = null; // 光标轮询：click-through 窗口收不到指针消息时兜底
 let ignoringMouse = true;
@@ -550,6 +559,23 @@ function startIpc() {
     win.setIgnoreMouseEvents(!inside, { forward: true });
   });
 
+  // 运行时换包（§9「换包不重启」）：给一个包目录，换成功就回新包描述。
+  // 失败的包不动当前画面，只记 warn——半坏的状态比没换更难受。
+  ipcMain.handle('pet:swap-pack', (_event, payload) => {
+    const raw = payload && payload.dir ? String(payload.dir) : '';
+    if (!raw) return { ok: false, error: '没给包目录' };
+    const dir = path.resolve(raw);
+    const res = inspectPack(dir);
+    if (!res.ok) {
+      log('warn', `换包失败（${dir}）：${res.errors.join('；')}`);
+      return { ok: false, error: res.errors.join('；') };
+    }
+    petPack = res.pack;
+    for (const w of res.warnings) log('warn', `宠物包：${w}`);
+    log('info', `换包：${petPack.id}/${petPack.name}`);
+    return { ok: true, pack: packForRenderer() };
+  });
+
   ipcMain.on('pet:hitbox', (_event, box) => {
     const n = (v) => Number(v);
     if (!box) return;
@@ -566,34 +592,49 @@ function startIpc() {
     if (Number.isFinite(n)) resizeForBubble(n);
   });
 
-  // 拖拽：渲染层给指针的屏幕坐标，主进程只负责挪窗口（§7）。
+  // 拖拽（§7）：指针位置由主进程自己每 16ms 轮询一次，不依赖 pointermove——
+  // 带 forward 的穿透窗口在失焦时收不到移动事件（第 1 步踩过）。跟手走弹簧，
+  // 松手按最近 120ms 的轨迹估初速，够快就抛。
   ipcMain.on('pet:drag-start', (_event, payload) => {
     if (!win || win.isDestroyed()) return;
     const x = Number(payload && payload.x);
     const y = Number(payload && payload.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    stopThrowLoop();
+    const point = screen.getCursorScreenPoint();
     const [winX, winY] = win.getPosition();
-    dragState = { pointerX: x, pointerY: y, winX, winY };
+    dragState = {
+      pointerX: point.x,
+      pointerY: point.y,
+      winX,
+      winY,
+      x: winX,
+      y: winY,
+      vx: 0,
+      vy: 0,
+      trail: [{ t: performance.now(), x: point.x, y: point.y }],
+      last: performance.now(),
+      timer: null,
+    };
     win.setIgnoreMouseEvents(false);
+    dragState.timer = setInterval(dragTick, 16);
   });
 
-  ipcMain.on('pet:drag-move', (_event, payload) => {
-    if (!win || win.isDestroyed() || !dragState) return;
-    const x = Number(payload && payload.x);
-    const y = Number(payload && payload.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const dx = Math.round(x - dragState.pointerX);
-    const dy = Math.round(y - dragState.pointerY);
-    win.setPosition(dragState.winX + dx, dragState.winY + dy);
-  });
+  // 渲染层也发 move（老路径兜底）：主进程不看它，位置全部由 dragTick 按光标算。
+  ipcMain.on('pet:drag-move', () => {});
 
   ipcMain.on('pet:drag-end', () => {
     if (!dragState) return;
+    const d = dragState;
     dragState = null;
+    if (d.timer) clearInterval(d.timer);
     // 松手先恢复穿透；光标要是还压在身体上，下一拍轮询会把穿透关回去。
     ignoringMouse = true;
     if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(true, { forward: true });
-    saveWindowState();
+
+    const velocity = estimateReleaseVelocity(trimTrail(d.trail, performance.now()), performance.now());
+    if (velocity) startThrowLoop(d.x, d.y, velocity.vx, velocity.vy);
+    else saveWindowState();
   });
 
   // 单击身体：坐标是窗口内 CSS 像素（§protocol §9 澄清），原样转给 roost。
@@ -618,6 +659,82 @@ function startIpc() {
  * 收到 pointermove——窗口不在前台时转发会断，指针压上身体也不会关穿透。
  * 所以主进程自己看光标在不在身体矩形里，作为命中切换的兜底。
  */
+/**
+ * 窗口左上角的允许范围：工作区减去窗口尺寸（§7「不出屏」）。
+ */
+function throwBoundsFor(bounds) {
+  const area = screen.getDisplayMatching(bounds).workArea;
+  return {
+    minX: area.x,
+    minY: area.y,
+    maxX: Math.max(area.x, area.x + area.width - bounds.width),
+    maxY: Math.max(area.y, area.y + area.height - bounds.height),
+  };
+}
+
+/**
+ * 拖拽帧：目标 = 按下时的窗口位置 + 指针位移，窗口用过阻尼弹簧追过去。
+ * 用光标而不用 pointermove，窗口跟不上手时也不会丢事件。
+ */
+function dragTick() {
+  const d = dragState;
+  if (!d || !win || win.isDestroyed()) return;
+  const now = performance.now();
+  const dt = Math.min((now - d.last) / 1000, 1 / 30);
+  d.last = now;
+  const point = screen.getCursorScreenPoint();
+  const bounds = throwBoundsFor(win.getBounds());
+  const targetX = d.winX + (point.x - d.pointerX);
+  const targetY = d.winY + (point.y - d.pointerY);
+  d.vx = springStep(d.vx, d.x, targetX, dt);
+  d.vy = springStep(d.vy, d.y, targetY, dt);
+  d.x = Math.min(Math.max(d.x + d.vx * dt, bounds.minX), bounds.maxX);
+  d.y = Math.min(Math.max(d.y + d.vy * dt, bounds.minY), bounds.maxY);
+  win.setPosition(Math.round(d.x), Math.round(d.y));
+  d.trail.push({ t: now, x: point.x, y: point.y });
+  d.trail = trimTrail(d.trail, now);
+}
+
+function stopThrowLoop() {
+  if (throwLoop) {
+    clearInterval(throwLoop);
+    throwLoop = null;
+  }
+}
+
+/** 松手之后：重力积分 + 边界反弹 + 地面摩擦，落定后存位置。 */
+function startThrowLoop(x, y, vx, vy) {
+  if (!win || win.isDestroyed()) return;
+  stopThrowLoop();
+  const bounds = throwBoundsFor(win.getBounds());
+  let state = {
+    x: Math.min(Math.max(x, bounds.minX), bounds.maxX),
+    y: Math.min(Math.max(y, bounds.minY), bounds.maxY),
+    vx,
+    vy,
+  };
+  let last = performance.now();
+  throwLoop = setInterval(() => {
+    if (!win || win.isDestroyed()) {
+      stopThrowLoop();
+      return;
+    }
+    const now = performance.now();
+    const dt = Math.min((now - last) / 1000, 1 / 30);
+    last = now;
+    const steps = throwSubsteps(state.vx, state.vy, dt);
+    let res = throwStep(state, dt / steps, bounds);
+    for (let i = 1; i < steps && !res.atRest; i += 1) res = throwStep(res, dt / steps, bounds);
+    state = { x: res.x, y: res.y, vx: res.vx, vy: res.vy };
+    win.setPosition(Math.round(res.x), Math.round(res.y));
+    if (res.landed) toRenderer('pet:landing', { depth: squashDepth(res.impact) });
+    if (res.atRest) {
+      stopThrowLoop();
+      saveWindowState();
+    }
+  }, 16);
+}
+
 function startHitPoll() {
   if (hitPoll) return;
   hitPoll = setInterval(() => {
@@ -651,6 +768,9 @@ function shutdown(reason) {
     clearInterval(hitPoll);
     hitPoll = null;
   }
+  stopThrowLoop();
+  if (dragState && dragState.timer) clearInterval(dragState.timer);
+  dragState = null;
   saveWindowState();
   removePidRecord();
   bubbles.dispose();

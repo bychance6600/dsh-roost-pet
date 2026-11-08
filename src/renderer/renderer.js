@@ -441,7 +441,9 @@ function wakePose() {
 /** 按当前档位恢复循环画面：想/做播档位，其余呼吸。 */
 function resumeStatePlayback() {
   if (sleeping) return;
-  if (currentState === 'thinking' || currentState === 'acting') {
+  // 五档都先看包里有没有配：done/error 也是姿态，配了就一直演到回 waiting。
+  // 没配就回退链（look → turn.left → breathing），waiting 永远走呼吸。
+  if (currentState && currentState !== 'waiting') {
     if (playLoop(`states.${currentState}`)) return;
   }
   startIdle();
@@ -478,6 +480,23 @@ api.onState(({ state, why }) => {
 });
 
 api.onAct(({ action }) => playAct(action));
+
+// 抛掷落地：主进程算出冲击速度，这里只管压扁那一下（80ms，§7）
+api.onLanding(({ depth }) => squash(Number(depth) || 0.16));
+
+/**
+ * Q 弹挤压：只动宠物画面（#pet-media），不碰 #pet 上的姿态 transform。
+ * 重启动画要先摘类再强制回流，否则连点时只有第一下看得见。
+ */
+function squash(depth) {
+  const d = Math.min(Math.max(Number(depth) || 0.16, 0.05), 0.3);
+  petEl.style.setProperty('--squash-depth', String(d));
+  petEl.classList.remove('squash');
+  void petEl.offsetWidth;
+  petEl.classList.add('squash');
+}
+
+petEl.addEventListener('animationend', () => petEl.classList.remove('squash'));
 
 // ---------------------------------------------------------------------------
 // 拖拽与单击：拖走时用主进程 setPosition，单击播 click 并报 poke
@@ -531,6 +550,7 @@ function endDrag(event, { cancelled = false } = {}) {
   if (cancelled) return;
 
   // 单击：包里点一次（随机挑一段），没包就用 CSS 骨架轻跳一下。
+  squash(0.1);
   const clips = resolveGroup('click');
   if (clips && clips.length) {
     playUrlsOnce([clips[Math.floor(Math.random() * clips.length)]]);
@@ -612,6 +632,35 @@ window.addEventListener('error', (event) => {
 // 起步
 // ---------------------------------------------------------------------------
 
+/** 装上一个包：换掉当前画面与尺寸，再按当前处境重新起播。 */
+function applyPack(packInfo) {
+  stopPlayback();
+  pack = packInfo || null;
+  petEl.dataset.pack = packInfo ? '1' : '0';
+  document.documentElement.style.setProperty('--pack-size', String((packInfo && packInfo.size) || 1));
+  reportHitBox();
+  if (sleeping) playSleepLoop();
+  else if (currentState && currentState !== 'waiting') resumeStatePlayback();
+  else startIdle();
+}
+
+// 调试入口：设置窗（第 6 步）还没做，先让手动/自动化测试能触发一次换包。
+window.__petSwapPack = (dir) => swapPack(dir);
+
+/** 运行时换包：主进程校验包目录，成功后把新包描述带回来。 */
+async function swapPack(dir) {
+  try {
+    const res = await api.swapPack(dir);
+    if (res && res.ok && res.pack) {
+      applyPack(res.pack);
+      return { ok: true };
+    }
+    return { ok: false, error: (res && res.error) || '换包失败' };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
 api.onInit(({ scale, bodyHeight: body, bubbleMin, ambientMinMs, ambientMaxMs, pack: packInfo }) => {
   document.documentElement.style.setProperty('--scale', String(scale));
   document.documentElement.style.setProperty('--body-h', `${body}px`);
@@ -621,10 +670,7 @@ api.onInit(({ scale, bodyHeight: body, bubbleMin, ambientMinMs, ambientMaxMs, pa
   if (Number.isFinite(ambientMaxMs) && ambientMaxMs > 0) ambientMax = Math.max(ambientMin, ambientMaxMs);
 
   if (packInfo && packInfo.animations && Object.keys(packInfo.animations).length) {
-    pack = packInfo;
-    petEl.dataset.pack = '1';
-    document.documentElement.style.setProperty('--pack-size', String(pack.size || 1));
-    startIdle();
+    applyPack(packInfo);
   }
 
   reportHeight();

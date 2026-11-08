@@ -171,7 +171,32 @@ body {
   right: 33%;
 }
 
-/* ---------- 宠物包画面 ---------- */
+/* 宠物包画面 */
+
+#pet-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden; /* 视频按高度铺满，两侧多出来的透明边裁掉，角色才够大 */
+  pointer-events: none;
+  transform-origin: 50% 100%;
+}
+
+/* 落地/点击的 Q 弹：只压画面，不动 #pet 的姿态 transform */
+#pet.squash #pet-media {
+  animation: squash 80ms ease-out;
+}
+
+@keyframes squash {
+  0% {
+    transform: scaleY(1) scaleX(1);
+  }
+  45% {
+    transform: scaleY(calc(1 - var(--squash-depth, 0.16))) scaleX(1.06);
+  }
+  100% {
+    transform: scaleY(1) scaleX(1);
+  }
+}
 
 #pet-video,
 #pet-img {
@@ -179,7 +204,8 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  /* 素材是 640×360 的整帧（角色居中），用 cover 铺满身体高度，左右透明边被裁掉 */
+  object-fit: cover;
   pointer-events: none;
   background: transparent;
 }

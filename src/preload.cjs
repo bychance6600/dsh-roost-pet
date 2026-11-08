@@ -31,10 +31,14 @@ contextBridge.exposeInMainWorld('pet', {
   dragEnd: () => ipcRenderer.send('pet:drag-end'),
   /** 单击身体：窗口内 CSS 像素坐标。 */
   poke: (point) => ipcRenderer.send('pet:poke', point),
+  /** 运行时换包：传包目录，回 { ok, pack } 或 { ok:false, error }。 */
+  swapPack: (dir) => ipcRenderer.invoke('pet:swap-pack', { dir }),
 
   onInit: subscribe('pet:init'),
   onBubble: subscribe('pet:bubble'),
   onBubbleHide: subscribe('pet:bubble-hide'),
   onState: subscribe('pet:state'),
   onAct: subscribe('pet:act'),
+  /** 抛掷落地：渲染层据此压一下（§7 落地挤压）。 */
+  onLanding: subscribe('pet:landing'),
 });
