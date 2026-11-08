@@ -251,6 +251,38 @@ body {
   transform: scaleY(0.18) translateY(6px);
 }
 
+/* ---------- 底噪（§6）：张望 / 打盹 / 伸懒腰，间隔由 renderer 控制 ---------- */
+
+#pet[data-ambient="look"] .eye {
+  animation: ambient-look 1.5s ease-in-out;
+}
+
+#pet[data-ambient="doze"] {
+  transform: translateY(5px) scale(0.99);
+  filter: brightness(0.95) saturate(0.92);
+}
+
+#pet[data-ambient="doze"] .eye {
+  transform: scaleY(0.22) translateY(5px);
+}
+
+#pet[data-ambient="stretch"] {
+  animation: act-stretch 900ms ease-in-out;
+}
+
+@keyframes ambient-look {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(6px) translateY(-1px);
+  }
+  65% {
+    transform: translateX(-5px) translateY(1px);
+  }
+}
+
 /* ---------- 动作（第 1 步只做骨架，第 4 步接真动作） ---------- */
 
 #pet[data-act="nod"] {

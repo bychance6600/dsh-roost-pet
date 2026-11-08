@@ -50,3 +50,23 @@ test('不认识的参数忽略，不抛', () => {
   assert.equal(a.size, 1);
   assert.equal(a.clickThrough, true);
 });
+
+test('底噪间隔缺省 3–5 分钟，乱写/太小回默认或夹到 1 秒', () => {
+  const a = parseArgs([]);
+  assert.equal(a.ambientMin, 180000);
+  assert.equal(a.ambientMax, 300000);
+
+  assert.equal(parseArgs(['--ambient-min=2000', '--ambient-max=4000']).ambientMin, 2000);
+  assert.equal(parseArgs(['--ambient-min=2000', '--ambient-max=4000']).ambientMax, 4000);
+
+  // 契约外的调试参数：非法值不能把渲染层搞成 0 间隔的抖动。
+  assert.equal(parseArgs(['--ambient-min=abc']).ambientMin, 180000);
+  assert.equal(parseArgs(['--ambient-min=0']).ambientMin, 180000);
+  assert.equal(parseArgs(['--ambient-min=10']).ambientMin, 1000);
+  assert.equal(parseArgs(['--ambient-max=-5']).ambientMax, 300000);
+
+  // max 比 min 小时抬到 min，别让随机区间反过来。
+  const b = parseArgs(['--ambient-min=5000', '--ambient-max=1000']);
+  assert.equal(b.ambientMin, 5000);
+  assert.equal(b.ambientMax, 5000);
+});

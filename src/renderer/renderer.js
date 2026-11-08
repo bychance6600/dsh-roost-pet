@@ -200,6 +200,62 @@ function fallBackToPlaceholder() {
 }
 
 // ---------------------------------------------------------------------------
+// 底噪：呼吸是常态，张望/打盹/伸懒腰每隔几分钟换一次（§6，间隔 ≥3 分钟）
+// ---------------------------------------------------------------------------
+
+const AMBIENT_KINDS = ['look', 'doze', 'stretch'];
+const AMBIENT_HOLD_MS = { look: 2800, doze: 20000, stretch: 1800 };
+
+let ambientMin = 180000;
+let ambientMax = 300000;
+let ambientTimer = null;
+let ambientEndTimer = null;
+
+function ambientAllowed() {
+  // 睡着、quiet、在说话（气泡）或有档位在身时都不切。
+  return !quiet && !sleeping && (petEl.dataset.state || 'waiting') === 'waiting' && bubble.hidden;
+}
+
+function cancelAmbient() {
+  clearTimeout(ambientTimer);
+  clearTimeout(ambientEndTimer);
+  ambientTimer = null;
+  ambientEndTimer = null;
+  delete petEl.dataset.ambient;
+}
+
+function scheduleAmbient() {
+  clearTimeout(ambientTimer);
+  ambientTimer = null;
+  // 被挡住时不排：等 quiet 结束、醒来、气泡收起这些恢复点各自再排。
+  if (!ambientAllowed()) return;
+  const span = Math.max(0, ambientMax - ambientMin);
+  ambientTimer = setTimeout(runAmbient, ambientMin + Math.random() * span);
+}
+
+function runAmbient() {
+  ambientTimer = null;
+  if (!ambientAllowed()) {
+    scheduleAmbient();
+    return;
+  }
+
+  const kind = AMBIENT_KINDS[Math.floor(Math.random() * AMBIENT_KINDS.length)];
+  petEl.dataset.ambient = kind;
+
+  if (hasPack()) {
+    if (kind === 'doze') playLoop('doze');
+    else playOnce(kind, { thenIdle: false });
+  }
+
+  ambientEndTimer = setTimeout(() => {
+    delete petEl.dataset.ambient;
+    if (!sleeping && !quiet && (petEl.dataset.state || 'waiting') === 'waiting') startIdle();
+    scheduleAmbient();
+  }, AMBIENT_HOLD_MS[kind]);
+}
+
+// ---------------------------------------------------------------------------
 // 动作
 // ---------------------------------------------------------------------------
 
@@ -226,10 +282,13 @@ function playAct(action) {
   if (action === 'quiet') {
     // §6：quiet 停底噪切换，不隐藏。
     quiet = true;
+    cancelAmbient();
+    if (!sleeping) startIdle();
     return;
   }
   if (action === 'loud') {
     quiet = false;
+    scheduleAmbient();
   }
 
   // CSS 骨架先动起来，包里有这组画面的话再盖上去。
@@ -252,6 +311,7 @@ function playAct(action) {
 function enterSleep() {
   if (sleeping) return;
   sleeping = true;
+  cancelAmbient();
   petEl.dataset.sleep = '1';
   delete petEl.dataset.act;
 
@@ -292,6 +352,8 @@ function leaveSleep() {
   const s = pack && pack.animations && pack.animations.sleep;
   if (hasPack() && s && s.end && s.end.length) playOnce('sleep.end');
   else startIdle();
+
+  scheduleAmbient();
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +361,7 @@ function leaveSleep() {
 // ---------------------------------------------------------------------------
 
 api.onBubble(({ text }) => {
+  cancelAmbient();
   bubbleText.textContent = text;
   bubble.hidden = false;
   reportHeightSoon();
@@ -308,6 +371,7 @@ api.onBubbleHide(() => {
   if (bubble.hidden) return;
   bubble.hidden = true;
   reportHeightSoon();
+  scheduleAmbient();
 });
 
 // ---------------------------------------------------------------------------
@@ -315,6 +379,10 @@ api.onBubbleHide(() => {
 // ---------------------------------------------------------------------------
 
 function showState(state, why) {
+  if (state !== 'waiting') {
+    cancelAmbient();
+    if (!sleeping) startIdle(); // 底噪停下，回呼吸当底
+  }
   petEl.dataset.state = state;
   status.hidden = false;
   status.dataset.state = state;
@@ -343,6 +411,7 @@ api.onState(({ state, why }) => {
   showState(state, why);
   clearTimeout(revertTimer);
   if (state === 'done' || state === 'error') scheduleRevert();
+  if (state === 'waiting') scheduleAmbient();
 });
 
 api.onAct(({ action }) => playAct(action));
@@ -381,11 +450,13 @@ window.addEventListener('error', (event) => {
 // 起步
 // ---------------------------------------------------------------------------
 
-api.onInit(({ scale, bodyHeight: body, bubbleMin, pack: packInfo }) => {
+api.onInit(({ scale, bodyHeight: body, bubbleMin, ambientMinMs, ambientMaxMs, pack: packInfo }) => {
   document.documentElement.style.setProperty('--scale', String(scale));
   document.documentElement.style.setProperty('--body-h', `${body}px`);
   document.documentElement.style.setProperty('--bubble-min', `${bubbleMin}px`);
   bodyHeight = body;
+  if (Number.isFinite(ambientMinMs) && ambientMinMs > 0) ambientMin = ambientMinMs;
+  if (Number.isFinite(ambientMaxMs) && ambientMaxMs > 0) ambientMax = Math.max(ambientMin, ambientMaxMs);
 
   if (packInfo && packInfo.animations && Object.keys(packInfo.animations).length) {
     pack = packInfo;
@@ -395,6 +466,7 @@ api.onInit(({ scale, bodyHeight: body, bubbleMin, pack: packInfo }) => {
   }
 
   reportHeight();
+  scheduleAmbient();
 });
 
 api.ready();

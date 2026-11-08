@@ -526,6 +526,8 @@ function startIpc() {
       bodyHeight: g.body,
       bubbleMin: g.bubble,
       clickThrough: args.clickThrough,
+      ambientMinMs: args.ambientMin,
+      ambientMaxMs: args.ambientMax,
       pack: packForRenderer(),
     });
     flushOutbox();
