@@ -137,7 +137,8 @@ test('body → roost 的表和文档逐字对得上', () => {
 
 test('枚举值和文档对得上，顺序也一样', () => {
   assert.deepEqual(docEnum('state'), [...P.STATES]);
-  assert.deepEqual(docEnum('action'), [...P.ACTIONS]);
+  // action 不再是枚举：名字来自角色包，表里只写 string（2026-11-08 18:17 板子）。
+  assert.ok(!DOC.includes('`action` ∈'), '动作不该再有枚举行');
   assert.deepEqual(docEnum('level'), [...P.LEVELS]);
 });
 
@@ -259,4 +260,17 @@ test('flush 交出最后一截没有换行的内容', () => {
   const d = new P.LineDecoder();
   d.push('{"t":"bye"}');
   assert.deepEqual(d.flush().lines, ['{"t":"bye"}']);
+});
+
+test('act.action 是自由字符串：动作名由角色包定，不查白名单', () => {
+  const ok = P.validate({ t: 'act', action: 'wave', why: '挥手' }, 'r2b');
+  assert.equal(ok.ok, true, ok.reason);
+  const 中文 = P.validate({ t: 'act', action: '超级旋转', why: '' }, 'r2b');
+  assert.equal(中文.ok, true, 中文.reason);
+
+  const empty = P.validate({ t: 'act', action: '  ', why: '' }, 'r2b');
+  assert.equal(empty.ok, false);
+  const long = P.validate({ t: 'act', action: 'x'.repeat(41), why: '' }, 'r2b');
+  assert.equal(long.ok, false);
+  assert.match(long.reason, /太长/);
 });

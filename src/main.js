@@ -18,7 +18,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { StringDecoder } = require('node:string_decoder');
 
-const { LineDecoder, parseLine, validate, encode } = require('../lib/protocol');
+const { LineDecoder, parseLine, validate, encode, ACTIONS } = require('../lib/protocol');
 const { BubbleQueue } = require('../lib/bubbles');
 const { EXIT, exitCodeFor } = require('../lib/exit');
 const { parseArgs } = require('../lib/args');
@@ -194,7 +194,14 @@ function handleLine(line) {
       return;
     }
     case 'act': {
-      // 第 1 步只记下，不动画；第 4 步接动作。
+      // 动作名由角色包定义：按当前包的 animations.actions 查；没有包时退回内置那十个。
+      const known = petPack && petPack.animations && petPack.animations.actions
+        ? Object.keys(petPack.animations.actions)
+        : ACTIONS;
+      if (!known.includes(msg.action)) {
+        log('warn', `包里没有这个动作，跳过：${msg.action}（有：${known.slice(0, 8).join(' / ')}）`);
+        return;
+      }
       toRenderer('pet:act', { action: msg.action, why: msg.why });
       return;
     }
