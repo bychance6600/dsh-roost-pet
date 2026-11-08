@@ -105,3 +105,9 @@ pid=12345 启动于 2026-11-08T13:40:00.000Z 版本 dsh-roost-pet/0.1.0 存活=y
 - **stdout**：只有协议。读侧按行切，空行忽略（协议 §1.6）。Electron 在 Windows 启动时
   会先甩一个换行；body 已经把 `console.*` 全接到 stderr，但这一行是它自己的，挡不住，
   所以读侧必须容得下空行。
+
+## 6. 开发态备注：在 DSH 会话里起 Electron
+
+在 DSH 会话里由 roost 直接起 `electron.exe` 时，Chromium 沙箱可能以 `0x80000003` 退出：stdout 只有一个空行，stderr 为空，body 主进程还没跑到 JS。这是宿主运行环境的问题，不是协议的一部分。
+
+开发态遇到它时，由 roost 把 `--no-sandbox` 放进自己的 `pet.args`；不要写进 §2 的参数表，也不要默认加给打包后的 `dsh-roost-pet.exe`。只在开发态、且确实出现这个退出码时使用。
