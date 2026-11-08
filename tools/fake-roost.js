@@ -122,10 +122,12 @@ async function main() {
   // 所以只在测试工具里补：现成的 profile 目录 + --no-sandbox。
   const profileDir = path.join(ROOT, '.tmp', 'e2e-profile');
   fs.mkdirSync(profileDir, { recursive: true });
-  bodyArgs.push('--no-sandbox', `--user-data-dir=${profileDir}`);
+  bodyArgs.push('--no-sandbox');
 
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
+  // 单实例锁跟着 userData 走：测试用独立 profile，别跟主人正在跑的那只抢锁。
+  env.DSH_ROOST_PET_USERDATA = profileDir;
 
   const mode = has('abort') ? 'abort' : has('eof') ? 'eof' : has('garbage') ? 'garbage' : 'normal';
   console.log(`\n假 roost（${mode}）→ ${binary} ${bodyArgs.slice(1).join(' ') || '(默认)'}\n`);

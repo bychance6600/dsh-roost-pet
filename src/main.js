@@ -60,8 +60,9 @@ const args = parseArgs(process.argv.slice(1));
 
 // userData 固定到仓库内的 .userdata/：受限环境里 %APPDATA% 可能建不出来
 // （Chromium 遇到 EPERM 会直接崩，连 JS 都跑不到），别让启动依赖它。
-// 必须在 app ready 之前设。
-app.setPath('userData', path.join(__dirname, '..', '.userdata'));
+// 必须在 app ready 之前设。手动并发测试可用 DSH_ROOST_PET_USERDATA 换一份
+// profile（单实例锁跟着 userData 走，两份互不打扰）。
+app.setPath('userData', process.env.DSH_ROOST_PET_USERDATA || path.join(__dirname, '..', '.userdata'));
 
 let win = null;
 let rendererReady = false;

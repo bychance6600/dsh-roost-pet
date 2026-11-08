@@ -282,7 +282,9 @@ function runAmbient() {
 // 动作占画面：动作片段播放期间，状态帧只换标签不切画面（16:31 / ①）；
 // 片段不足 1.2 秒就停在末帧补足（②）；结束后回当前档位，不回呼吸（③）。
 const ACTION_MIN_MS = 1200;
+const actionQueue = createActionQueue(8); // 16:53：动作排队，别把前一个顶掉
 let actionPlaying = false;
+let actionCurrent = null;
 let actionSeq = 0;
 let actionTimer = null;
 
@@ -306,6 +308,7 @@ function beginActionWindow() {
 
 /** 回当前档位的画面：waiting 且 roost 仍判睡就先收睡姿。 */
 function resumeScene() {
+  if (actionPlaying) return; // 动作占着画面，等它自己收尾
   if (sleeping) return;
   if (currentState === 'waiting' && roostSleeping) {
     enterSleep();
@@ -314,15 +317,22 @@ function resumeScene() {
   resumeStatePlayback();
 }
 
-/** 收掉动作占位：回当前档位（睡着时让睡姿继续压着）。 */
+/** 收掉动作占位：有排队的就先播下一个，否则回当前档位（睡着时让睡姿继续压着）。 */
 function endActionWindow(seq) {
   if (seq !== actionSeq || !actionPlaying) return;
   actionPlaying = false;
+  actionCurrent = null;
+  delete petEl.dataset.act;
   if (actionTimer) {
     clearTimeout(actionTimer);
     actionTimer = null;
   }
   if (sleeping) return;
+  const next = actionQueue.shift();
+  if (next) {
+    runAction(next);
+    return;
+  }
   resumeScene();
 }
 
@@ -330,6 +340,8 @@ function endActionWindow(seq) {
 function cancelActionWindow() {
   actionSeq += 1;
   actionPlaying = false;
+  actionCurrent = null;
+  delete petEl.dataset.act;
   if (actionTimer) {
     clearTimeout(actionTimer);
     actionTimer = null;
@@ -365,27 +377,9 @@ function playActionClip(name) {
   return true;
 }
 
-function playAct(action) {
-  if (action === 'sleep') {
-    roostSleeping = true;
-    enterSleep();
-    return;
-  }
-  if (action === 'wake') {
-    roostSleeping = false;
-    leaveSleep();
-  }
-  if (action === 'quiet') {
-    // §6：quiet 停底噪切换，不隐藏。
-    quiet = true;
-    cancelAmbient();
-    if (!sleeping) startIdle();
-    return;
-  }
-  if (action === 'loud') {
-    quiet = false;
-    scheduleAmbient();
-  }
+/** 真正开播一个动作：CSS 骨架先动，有预渲染片段就盖上去。 */
+function runAction(action) {
+  actionCurrent = action;
 
   // CSS 骨架先动起来，包里有这组画面的话再盖上去。
   delete petEl.dataset.act;
@@ -400,13 +394,56 @@ function playAct(action) {
   }
 
   const specific = pack && pack.animations && pack.animations.actions && pack.animations.actions[action];
-  if (sleeping) return;
-  if (specific) playActionClip(`actions.${action}`);
+  if (sleeping) {
+    actionCurrent = null;
+    return;
+  }
+  if (specific && playActionClip(`actions.${action}`)) return;
+
+  // 没有预渲染片段：用最短可见时长兜住 CSS 动作，结束时再抽队列。
+  const seq = beginActionWindow();
+  actionTimer = setTimeout(() => endActionWindow(seq), Math.max(ACT_MS[action] || 0, ACTION_MIN_MS));
+}
+
+function playAct(action) {
+  if (action === 'sleep' || action === 'wake') {
+    // 睡/醒优先：清掉已排上的动作，也不让当前动作继续占画面。
+    actionQueue.clear();
+    cancelActionWindow();
+    if (action === 'sleep') {
+      roostSleeping = true;
+      enterSleep();
+      return;
+    }
+    roostSleeping = false;
+    leaveSleep();
+    return;
+  }
+  if (action === 'quiet') {
+    // §6：quiet 停底噪切换，不隐藏。
+    quiet = true;
+    cancelAmbient();
+    // 动作正在播就别拿呼吸把它顶掉
+    if (!sleeping && !actionPlaying) startIdle();
+    return;
+  }
+  if (action === 'loud') {
+    quiet = false;
+    scheduleAmbient();
+  }
+
+  if (actionPlaying) {
+    // 当前动作还在播（含最短 1.2 秒的尾巴）：排队，不打断。
+    actionQueue.push(action, actionCurrent);
+    return;
+  }
+  runAction(action);
 }
 
 function enterSleep() {
   if (sleeping) return;
   sleeping = true;
+  actionQueue.clear();
   cancelActionWindow();
   cancelAmbient();
   petEl.dataset.sleep = '1';
@@ -748,6 +785,7 @@ window.addEventListener('error', (event) => {
 
 /** 装上一个包：换掉当前画面与尺寸，再按当前处境重新起播。 */
 function applyPack(packInfo) {
+  actionQueue.clear();
   cancelActionWindow();
   stopPlayback();
   pack = packInfo || null;
@@ -761,6 +799,13 @@ function applyPack(packInfo) {
 
 // 调试入口：设置窗（第 6 步）还没做，先让手动/自动化测试能触发一次换包。
 window.__petSwapPack = (dir) => swapPack(dir);
+
+// 调试入口：动作队列的现状（自动化测试用它确认排队/去重/清队）。
+window.__petActionState = () => ({
+  playing: actionPlaying,
+  current: actionCurrent,
+  queue: actionQueue.pending,
+});
 
 /** 运行时换包：主进程校验包目录，成功后把新包描述带回来。 */
 async function swapPack(dir) {
