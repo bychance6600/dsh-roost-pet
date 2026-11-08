@@ -23,7 +23,7 @@ const { BubbleQueue } = require('../lib/bubbles');
 const { EXIT, exitCodeFor } = require('../lib/exit');
 const { parseArgs } = require('../lib/args');
 const { serializePidRecord, parsePidRecord } = require('../lib/pidfile');
-const { inspectPack } = require('../lib/pack');
+const { inspectPack, CONTROL_ACTIONS } = require('../lib/pack');
 const {
   springStep,
   trimTrail,
@@ -195,11 +195,12 @@ function handleLine(line) {
     }
     case 'act': {
       // 动作名由角色包定义：按当前包的 animations.actions 查；没有包时退回内置那十个。
-      const known = petPack && petPack.animations && petPack.animations.actions
+      // sleep/wake/quiet/loud 是协议控制名（渲染层特例），不算包动作，永远放行。
+      const packActions = petPack && petPack.animations && petPack.animations.actions
         ? Object.keys(petPack.animations.actions)
         : ACTIONS;
-      if (!known.includes(msg.action)) {
-        log('warn', `包里没有这个动作，跳过：${msg.action}（有：${known.slice(0, 8).join(' / ')}）`);
+      if (!packActions.includes(msg.action) && !CONTROL_ACTIONS.includes(msg.action)) {
+        log('warn', `包里没有这个动作，跳过：${msg.action}（有：${packActions.slice(0, 8).join(' / ')}）`);
         return;
       }
       toRenderer('pet:act', { action: msg.action, why: msg.why });

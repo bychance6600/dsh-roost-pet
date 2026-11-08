@@ -94,6 +94,7 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 - 没有包也能跑：`"$NODE" node_modules/electron/cli.js .` 就是占位团子。
 - `--pet-dir` 显式指了坏目录、或显式 `--pet=<id>` 哪儿都找不到 → 退出码 4（配置错）；不显式点名时缺包不算错，画占位团子。
 - 动作名由角色包定义：协议只规定 roost 会发哪十个 act 名，包里叫什么随意。加一个动作 = 放 webm 进包目录 + `pet.json` 的 `actions` 里加一行 + 重启 body。
+- `sleep`/`wake`/`quiet`/`loud` 是协议控制名（渲染层特例），不用写进 `actions`，任何包都放行。
 - 换包不重启：主进程 IPC `pet:swap-pack`（`{dir}`）校验后热换；开发时可以直接在控制台调 `window.__petSwapPack("C:/path/to/pack")`。
 
 ## 交互（第 1 步之后补的）

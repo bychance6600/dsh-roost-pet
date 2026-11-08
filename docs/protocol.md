@@ -35,7 +35,7 @@
 | `hello` | `v:number`, `roost:string` | 是 | 握手回包，`v=1` |
 | `say` | `id:string`, `seq:int≥0`, `text:string`, `final:bool` | 是 | 把这句**逐字**冒泡。`text` 不加工、不截断、不概括；`seq` 是同一轮内分条序号；`final=true` 表示该轮没有后续分条了 |
 | `state` | `state:enum`, `why:string` | 是 | 五档姿态：`thinking`/`acting`/`waiting`/`error`/`done`。`why` 是人话依据，可为空串（例：`等：等会话返回`）。**只改姿态与只读显示，不冒泡** |
-| `act` | `action:string`, `why:string` | 是 | 演一个动作；动作名由角色包的 `animations.actions` 定义（非空、≤40 字），body 认不得就 warn 并跳过。`why` 同上。`quiet` 不是隐藏，`sleep`/`wake` 管睡与醒 |
+| `act` | `action:string`, `why:string` | 是 | 演一个动作；动作名由角色包的 `animations.actions` 定义（非空、≤40 字），body 认不得就 warn 并跳过；`sleep`/`wake`/`quiet`/`loud` 是协议控制名，不写进包也永远可用。`why` 同上。`quiet` 不是隐藏，`sleep`/`wake` 管睡与醒 |
 | `bye` | —（无字段） | — | 正常退出；body 3 秒内退干净 |
 
 枚举（表外值一律按"未知"忽略并 warn）：
@@ -98,7 +98,7 @@
 | 2026-11-08 | v1 | 显示时长由 `max(8s, 字数/12)` 改为 `clamp(字数/12, 2.5s, 10s)`；1.2 秒最早替换间隔不变；补一句"气泡放不下就往上长，不裁字" | body |
 | 2026-11-08 | v1 | 澄清 §5.2：去重键是 `id + seq`，不是单独的 `id`——否则 §5.3 的同轮分条会全被当成重复丢掉 | body |
 | 2026-11-08 | v1 | 补 §1.6：空行忽略。Electron 在 Windows 启动时会先往 stdout 甩一个空行，读侧不能当成坏消息 | body |
-| 2026-11-08 | v1 | `act.action` 放开为自由字符串（非空、≤40 字），动作名由角色包定义；点击改由 roost 决定：`poke` 改为 `ts` 必填、`x/y` 可选 | body |
+| 2026-11-08 | v1 | `act.action` 放开为自由字符串（非空、≤40 字），动作名由角色包定义，`sleep`/`wake`/`quiet`/`loud` 作为控制名始终放行；点击改由 roost 决定：`poke` 改为 `ts` 必填、`x/y` 可选 | body |
 | 2026-11-08 | v1 | 从施工单 §3 抽出成独立表；澄清 `poke.x/y` 为窗口内 CSS 像素；补齐容错（坏 JSON/未知 t/缺字段）、重复 `id` 去重、`final` 语义、队列满与 `ack` 的先后、行缓冲上限 | body |
 
 ## 10. 附录：一轮完整示例

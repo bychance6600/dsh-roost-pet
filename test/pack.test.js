@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { inspectPack, pickAnimation } = require('../lib/pack');
+const { inspectPack, pickAnimation, CONTROL_ACTIONS } = require('../lib/pack');
 
 function makePack(files, petJson) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'petpack-'));
@@ -212,4 +212,8 @@ test('动作由角色包定义：协议里没有的动作名也收', () => {
   assert.deepEqual(res.pack.animations.actions.wave, ['w.webm']);
   assert.deepEqual(res.pack.animations.actions['超级旋转'], [{ file: 'a.webm', from: 1, to: 3 }]);
   assert.equal(res.warnings.length, 0);
+});
+
+test('sleep/wake/quiet/loud 是协议控制名，不算包动作', () => {
+  assert.deepEqual([...CONTROL_ACTIONS].sort(), ['loud', 'quiet', 'sleep', 'wake']);
 });
