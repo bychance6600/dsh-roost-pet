@@ -107,7 +107,11 @@ function playOne(url) {
       video.src = url;
       const started = video.play();
       if (started && typeof started.catch === 'function') {
-        started.catch(() => reject(new Error(`视频起不来：${url}`)));
+        started.catch((err) => {
+          // 换 src 打断上一次 play 会抛 AbortError：那是我们自己换的，不算坏。
+          if (err && err.name === 'AbortError') resolve();
+          else reject(new Error(`视频起不来：${url}（${err && err.message}）`));
+        });
       }
     } else {
       video.hidden = true;
