@@ -49,11 +49,16 @@ PNPM="C:/Users/by_ch/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin
 
 ## 宠物包
 
-素材不入库，所以仓库里没有 `pets/`。摆一个包进去就能看：
+素材不入库。按文件夹名认角色，找包顺序：
+
+1. `--pet-dir=<目录>`（调试用，唯一不走回退）
+2. `%USERPROFILE%\.dsh-roost\pets\<id>\`（本机角色目录）
+3. `<仓库>/pets/<id>/`
+
+`<id>` 来自 `--pet`，默认 `default`。仓库里只留模板 `pets/default/pet.json`（只有映射，不含素材）：把素材文件按模板里的文件名放进同一目录就能用。
 
 ```
-pets/
-  my-pet/
+%USERPROFILE%\.dsh-roost\pets\my-pet\
     pet.json
     breathing-1.png  breathing-2.png
     nod.webm
@@ -82,7 +87,7 @@ pets/
   `states.x → look → turn.left → breathing` 回退，再缺就画占位团子（一个白团子两只眼）。
 - 路径只许留在包目录里；文件不存在、数组为空、`pet.json` 坏了，都会在 stderr 和 `log` 里说明，并退回占位。
 - 没有包也能跑：`"$NODE" node_modules/electron/cli.js .` 就是占位团子。
-- `--pet-dir` 显式指了坏目录 → 退出码 4（配置错）；默认位置缺包不算错。
+- `--pet-dir` 显式指了坏目录、或显式 `--pet=<id>` 哪儿都找不到 → 退出码 4（配置错）；不显式点名时缺包不算错，画占位团子。
 - 换包不重启还没做（施工单 §9 的要求）。
 
 ## 交互（第 1 步之后补的）

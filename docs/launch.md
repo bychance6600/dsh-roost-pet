@@ -42,8 +42,10 @@ roost 按这个顺序传，body 必须认：
 | `--size=1.0` | 0.5–2.0 | 初始大小；body 自己再夹一次 |
 | `--position=bottom-right` | 五选一 | `bottom-right` / `bottom-left` / `top-right` / `top-left` / `center`；乱写当没传 |
 | `--click-through=1` | `0` 或 `1` | `1` = 空白处点穿；缺省 `1` |
-| `--pet=default` | 字符串 | 宠物包 id；加载失败先退回占位身体，不崩 |
+| `--pet=default` | 字符串 | 宠物包 id（文件夹名）；找不到且显式传了 → 退出码 `4`，不显式传就退回占位身体 |
 | `--pet-dir=<目录>` | 路径 | body 自己的调试参数（契约里没有）：直接指一个包目录；显式指了却读不出来按退出码 `4` 退 |
+
+宠物包目录按这个顺序找：`--pet-dir` > `%USERPROFILE%\.dsh-roost\pets\<id>` > `<仓库>/pets/<id>`。
 
 之后 `config.pet.args` 的额外参数原样接上；不认识的一律忽略，不许因此退出。
 

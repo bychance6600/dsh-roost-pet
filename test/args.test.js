@@ -42,6 +42,7 @@ test('click-through=0 / false 才关；缺省是开', () => {
 
 test('--pet= 空值回 default', () => {
   assert.equal(parseArgs(['--pet=']).pet, 'default');
+  assert.equal(parseArgs(['--pet=']).petExplicit, true);
   assert.equal(parseArgs(['--pet=cat']).pet, 'cat');
 });
 

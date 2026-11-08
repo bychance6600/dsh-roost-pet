@@ -13,6 +13,7 @@
  */
 
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 const { StringDecoder } = require('node:string_decoder');
@@ -32,6 +33,7 @@ const {
   squashDepth,
 } = require('../lib/physics');
 const { pathToFileURL } = require('node:url');
+const { petCandidates } = require('../lib/petpath');
 
 // 启动期就把 console.* 全接到 stderr：只要有一行 console.log 落到 stdout，
 // roost 那一侧的协议流就坏了。§1.6 的空行跳过只是兜底——Electron 自己
@@ -334,21 +336,33 @@ function describeLockHolder() {
 }
 
 // ---------------------------------------------------------------------------
-// 宠物包（§9）：<repo>/pets/<id>/pet.json，或 --pet-dir=<目录> 直接指。
+// 宠物包（§9）：按文件夹名认角色（2026-11-08 17:31 板子）。
+// 解析顺序：--pet-dir > ~/.dsh-roost/pets/<id> > <repo>/pets/<id>。
 // 没有包就画占位团子；包坏了报错但不崩。
 // ---------------------------------------------------------------------------
 
 let petPack = null;
 let petPackProblem = '';
 
+function packCandidates() {
+  return petCandidates({
+    pet: args.pet,
+    petDir: args.petDir,
+    home: os.homedir(),
+    repoRoot: path.join(__dirname, '..'),
+  });
+}
+
 function packDir() {
-  return args.petDir ? path.resolve(args.petDir) : path.join(__dirname, '..', 'pets', args.pet);
+  return packCandidates()[0];
 }
 
 function loadPetPack() {
-  const dir = packDir();
+  const candidates = packCandidates();
 
+  // --pet-dir 是显式指路：指了读不出来就是配置错，不静默退占位。
   if (args.petDir) {
+    const dir = candidates[0];
     try {
       if (!fs.statSync(dir).isDirectory()) throw new Error('不是目录');
     } catch (err) {
@@ -358,18 +372,30 @@ function loadPetPack() {
     }
   }
 
-  const res = inspectPack(dir);
-  if (!res.ok) {
-    petPackProblem = `宠物包没加载（${dir}）：${res.errors.join('；')}`;
-    log('warn', petPackProblem);
-    if (args.petDir) return false; // 显式指了却坏了：按配置错退
-    return true; // 默认包缺失不算错：画占位
+  const tried = [];
+  for (const dir of candidates) {
+    const res = inspectPack(dir);
+    if (res.ok) {
+      for (const w of res.warnings) log('warn', `宠物包：${w}`);
+      petPack = res.pack;
+      log(
+        'info',
+        `宠物包已加载：${petPack.id}/${petPack.name}，目录 ${dir}，组 ${Object.keys(petPack.animations).join(',')}`,
+      );
+      return true;
+    }
+    tried.push(`${dir}（${res.errors.join('；')}）`);
   }
 
-  for (const w of res.warnings) log('warn', `宠物包：${w}`);
-  petPack = res.pack;
-  log('info', `宠物包已加载：${petPack.id}/${petPack.name}，组 ${Object.keys(petPack.animations).join(',')}`);
-  return true;
+  petPackProblem = `宠物包没加载：${tried.join(' | ')}`;
+  log('warn', petPackProblem);
+
+  // 显式点了名（--pet-dir 或 --pet）却哪儿都找不到：配置错，退 4。
+  if (args.petDir || args.petExplicit) {
+    log('error', `宠物包不存在：${args.petDir || args.pet}（找过 ${candidates.join('、')}）`);
+    return false;
+  }
+  return true; // 默认包缺失不算错：画占位
 }
 
 /** 给 renderer 的包描述：路径换成 file://，渲染层不用知道盘上的目录结构。 */
@@ -836,7 +862,7 @@ function boot() {
     return;
   }
 
-  // §9：宠物包装不上就画占位；但 --pet-dir 显式指了坏目录，按配置错退 4。
+  // §9：宠物包装不上就画占位；但显式指了 --pet-dir 或 --pet 却找不到，按配置错退 4。
   if (!loadPetPack()) {
     shutdown('config-error');
     return;

@@ -1,0 +1,116 @@
+{
+  "id": "default",
+  "name": "蓝毛小女仆",
+  "size": 1.5,
+  "animations": {
+    "breathing": [
+      "待机呼吸休闲.webm"
+    ],
+    "look": [
+      "东张西望.webm"
+    ],
+    "doze": [
+      "原地小憩沉眠.webm"
+    ],
+    "stretch": [
+      "超大伸懒腰.webm"
+    ],
+    "drag": [
+      "被鼠标拖拽悬空反馈.webm"
+    ],
+    "click": [
+      "点击回应-开心跃动.webm",
+      "点击回应-害羞惊讶.webm",
+      "点击回应-傲娇生气.webm",
+      "点击回应-挠痒咯咯笑.webm",
+      "点击回应-元气挥手.webm"
+    ],
+    "turn": {
+      "left": [
+        "东张西望.webm"
+      ],
+      "right": [
+        "东张西望.webm"
+      ]
+    },
+    "sleep": {
+      "start": [
+        "睡觉-开始.webm"
+      ],
+      "loop": [
+        "睡觉-循环.webm"
+      ],
+      "end": [
+        "睡觉-起来.webm"
+      ]
+    },
+    "actions": {
+      "nod": [
+        {
+          "file": "女仆屈膝礼仪.webm",
+          "from": 2,
+          "to": 6.4
+        }
+      ],
+      "shake": [
+        {
+          "file": "被吓一跳.webm",
+          "from": 0.8,
+          "to": 2.6
+        }
+      ],
+      "bounce": [
+        {
+          "file": "点击回应-开心跃动.webm",
+          "from": 1.4,
+          "to": 6.2
+        }
+      ],
+      "shy": [
+        {
+          "file": "点击回应-害羞惊讶.webm",
+          "from": 0.9,
+          "to": 5
+        }
+      ],
+      "laugh": [
+        {
+          "file": "点击回应-挠痒咯咯笑.webm",
+          "from": 0.4,
+          "to": 6
+        }
+      ],
+      "stretch": [
+        {
+          "file": "超大伸懒腰.webm",
+          "from": 4,
+          "to": 8
+        }
+      ],
+      "wake": [
+        {
+          "file": "睡觉-起来.webm",
+          "from": 3,
+          "to": 8
+        }
+      ]
+    },
+    "states": {
+      "thinking": [
+        "工作状态-思考冒泡.webm"
+      ],
+      "acting": [
+        "工作状态-忙碌点按.webm"
+      ],
+      "done": [
+        "工作状态-雀跃庆祝.webm"
+      ],
+      "error": [
+        "工作状态-垂头叹气冒汗.webm"
+      ],
+      "waiting": [
+        "工作状态-原地踱步张望.webm"
+      ]
+    }
+  }
+}
