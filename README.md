@@ -27,7 +27,7 @@ roost 的身体。
 - 假 roost 与协议/气泡/宠物包/退出码的单元测试
 - 启动约定（可执行、参数、退出码 0/1/2/3/4）见 [`docs/launch.md`](docs/launch.md)
 
-还没有的（按施工单顺序往后做）：拖拽与物理、别针与吸附、注意力、双击聊天、设置窗、运行时换包、打包。
+还没有的（按施工单顺序往后做）：别针与吸附、注意力、双击聊天、设置窗、失败演练与打包。
 
 ## 依赖
 
@@ -77,6 +77,7 @@ pets/
 ```
 
 - 一组是一串文件：图片按 110ms 一帧播，`webm`/`mp4` 按片长播；`breathing` 一直循环。
+- 动作可以只播一段：`"nod": { "file": "nod.webm", "from": 2.0, "to": 6.4 }`（秒，`from`/`to` 可省）。播到 `to` 就停、淡出 0.15 秒，然后回当前档位；不写窗口就整段播。
 - 缺组按 `actions.x → click → turn.left → breathing` 回退；`states.thinking/acting` 没配就按
   `states.x → look → turn.left → breathing` 回退，再缺就画占位团子（一个白团子两只眼）。
 - 路径只许留在包目录里；文件不存在、数组为空、`pet.json` 坏了，都会在 stderr 和 `log` 里说明，并退回占位。

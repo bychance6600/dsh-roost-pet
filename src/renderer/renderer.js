@@ -15,6 +15,7 @@ const bubbleZone = document.getElementById('bubble-zone');
 const petEl = document.getElementById('pet');
 const video = document.getElementById('pet-video');
 const image = document.getElementById('pet-img');
+const media = document.getElementById('pet-media');
 const status = document.getElementById('status');
 const statusState = document.getElementById('status-state');
 const statusWhy = document.getElementById('status-why');
@@ -31,6 +32,8 @@ const STATES = new Set(Object.keys(STATE_LABEL));
 
 // 一张图当一帧播多久；webm 交给 <video> 自己按片长走。
 const FRAME_MS = 110;
+// 窗口片段播到 to 之后淡出多久再接下一段/回档位。
+const FADE_MS = 150;
 
 let bodyHeight = 300;
 let pack = null;
@@ -44,6 +47,8 @@ let pendingRevert = false;
 
 // 播放令牌：每次停/换都 +1，旧序列发现令牌变了就自己退出。
 let seqToken = 0;
+// 正在播的窗口片段有个取消钩子；stopPlayback 用它把 rAF 收掉。
+let windowedCancel = null;
 
 // ---------------------------------------------------------------------------
 // 窗口高度：气泡要多少就给多少，主进程负责往上长
@@ -105,30 +110,120 @@ function reportIssue(kind, detail) {
   }
 }
 
-function playOne(url) {
+/** 一组画面里的元素可能是字符串（整段）或 {file,from,to}（只播一段）。 */
+function asClip(entry) {
+  if (typeof entry === 'string') return { url: entry, from: null, to: null };
+  if (entry && typeof entry === 'object') {
+    const url = entry.url || entry.file;
+    if (typeof url !== 'string' || !url) return null;
+    return {
+      url,
+      from: Number.isFinite(entry.from) ? entry.from : null,
+      to: Number.isFinite(entry.to) ? entry.to : null,
+    };
+  }
+  return null;
+}
+
+function playOne(entry) {
+  const clip = asClip(entry);
+  if (!clip) return Promise.reject(new Error('画面条目坏了：既不是文件名也没有 file'));
+
+  // 有窗口就不整段播：seek 到 from，播到 to 停（0.15 秒淡出），然后交回档位。
+  if (clip.from !== null || clip.to !== null) {
+    return playWindowed(clip.url, clip.from, clip.to);
+  }
+
   return new Promise((resolve, reject) => {
-    if (/\.(webm|mp4|m4v|mov)([?#]|$)/i.test(url)) {
+    if (/\.(webm|mp4|m4v|mov)([?#]|$)/i.test(clip.url)) {
       image.hidden = true;
       video.hidden = false;
       video.loop = false;
       video.onended = () => resolve();
-      video.onerror = () => reject(new Error(`视频放不出来：${url}`));
-      video.src = url;
+      video.onerror = () => reject(new Error(`视频放不出来：${clip.url}`));
+      video.src = clip.url;
       const started = video.play();
       if (started && typeof started.catch === 'function') {
         started.catch((err) => {
           // 换 src 打断上一次 play 会抛 AbortError：那是我们自己换的，不算坏。
           if (err && err.name === 'AbortError') resolve();
-          else reject(new Error(`视频起不来：${url}（${err && err.message}）`));
+          else reject(new Error(`视频起不来：${clip.url}（${err && err.message}）`));
         });
       }
     } else {
       video.hidden = true;
       image.hidden = false;
       image.onload = () => setTimeout(resolve, FRAME_MS);
-      image.onerror = () => reject(new Error(`图片放不出来：${url}`));
-      image.src = url;
+      image.onerror = () => reject(new Error(`图片放不出来：${clip.url}`));
+      image.src = clip.url;
     }
+  });
+}
+
+/** 播一个带窗口的片段：from 起，to 止，停之前淡出 0.15 秒。 */
+function playWindowed(url, from, to) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    let raf = 0;
+
+    const stop = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      if (windowedCancel === stop) windowedCancel = null;
+    };
+
+    const finish = (fade) => {
+      if (done) return;
+      done = true;
+      stop();
+      if (!fade) {
+        resolve();
+        return;
+      }
+      media.classList.add('fading');
+      setTimeout(() => {
+        media.classList.remove('fading');
+        resolve();
+      }, FADE_MS);
+    };
+
+    // stopPlayback 要能立刻把这次播放收掉（否则 rAF 会一直空转）。
+    windowedCancel = () => {
+      if (done) return;
+      done = true;
+      stop();
+      resolve('cancelled');
+    };
+
+    image.hidden = true;
+    video.hidden = false;
+    video.loop = false;
+    video.onended = () => finish(false);
+    video.onerror = () => reject(new Error(`视频放不出来：${url}`));
+    video.onloadedmetadata = () => {
+      try {
+        video.currentTime = from === null ? 0 : from;
+      } catch {
+        /* 有的容器不给 seek，就当从头播 */
+      }
+      const started = video.play();
+      if (started && typeof started.catch === 'function') {
+        started.catch((err) => {
+          if (err && err.name === 'AbortError') finish(false);
+          else reject(new Error(`视频起不来：${url}（${err && err.message}）`));
+        });
+      }
+      const watch = () => {
+        if (done) return;
+        if (to !== null && video.currentTime >= to) {
+          finish(true);
+          return;
+        }
+        raf = requestAnimationFrame(watch);
+      };
+      raf = requestAnimationFrame(watch);
+    };
+    video.src = url;
   });
 }
 
@@ -157,6 +252,8 @@ async function runSequence(urls, { loop = false, token }) {
 
 function stopPlayback() {
   seqToken += 1;
+  if (windowedCancel) windowedCancel();
+  media.classList.remove('fading');
   video.pause();
   video.removeAttribute('src');
   try {

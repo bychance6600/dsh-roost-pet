@@ -159,3 +159,42 @@ test('回退链：states.thinking → look → turn.left → breathing', () => {
   const onlyBreathing = mk({ breathing: ['a.webm'] });
   assert.deepEqual(pickAnimation(onlyBreathing, 'states.thinking'), ['a.webm']);
 });
+
+test('动作窗口：字符串、数组、{file,from,to} 都认', () => {
+  const dir = makePack(['a.webm', 'b.webm'], {
+    id: 'demo',
+    animations: {
+      breathing: ['a.webm'],
+      actions: {
+        nod: 'b.webm',
+        shake: [{ file: 'a.webm', from: 1, to: 2.5 }],
+        laugh: ['a.webm', { file: 'b.webm', from: 0.5, to: 3 }],
+      },
+    },
+  });
+  const res = inspectPack(dir);
+  assert.equal(res.ok, true, res.errors.join(';'));
+  assert.deepEqual(res.pack.animations.actions.nod, ['b.webm']);
+  assert.deepEqual(res.pack.animations.actions.shake, [{ file: 'a.webm', from: 1, to: 2.5 }]);
+  assert.deepEqual(res.pack.animations.actions.laugh, ['a.webm', { file: 'b.webm', from: 0.5, to: 3 }]);
+});
+
+test('动作窗口：坏 from/to、to<=from、缺 file、用 url 都报错', () => {
+  const cases = [
+    { file: 'a.webm', from: -1 },
+    { file: 'a.webm', to: 0 },
+    { file: 'a.webm', from: 3, to: 2 },
+    { from: 1, to: 2 },
+    { url: 'a.webm', from: 1, to: 2 },
+    'a.webm',
+  ];
+  for (const bad of cases) {
+    const dir = makePack(['a.webm'], {
+      id: 'demo',
+      animations: { breathing: ['a.webm'], actions: bad === 'a.webm' ? { nod: ['a.webm', 7] } : { nod: bad } },
+    });
+    const res = inspectPack(dir);
+    assert.equal(res.ok, false, `应拒绝：${JSON.stringify(bad)}`);
+    assert.ok(res.errors.length > 0);
+  }
+});

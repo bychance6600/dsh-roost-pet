@@ -376,7 +376,11 @@ function loadPetPack() {
 function packForRenderer() {
   if (!petPack) return null;
   const url = (rel) => pathToFileURL(path.join(petPack.dir, rel)).href;
-  const list = (arr) => arr.map(url);
+  // 动作可以有窗口：{file,from,to} → {file: file:///…, from, to}，渲染层按窗口播。
+  const list = (arr) =>
+    arr.map((item) =>
+      typeof item === 'string' ? url(item) : { ...item, file: url(item.file) },
+    );
 
   const animations = {};
   for (const [key, value] of Object.entries(petPack.animations)) {

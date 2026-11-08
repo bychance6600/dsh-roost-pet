@@ -179,6 +179,11 @@ body {
   overflow: hidden; /* 视频按高度铺满，两侧多出来的透明边裁掉，角色才够大 */
   pointer-events: none;
   transform-origin: 50% 100%;
+  transition: opacity 150ms ease; /* 动作窗口播到 to 时淡出，别硬切 */
+}
+
+#pet-media.fading {
+  opacity: 0;
 }
 
 /* 落地/点击的 Q 弹：只压画面，不动 #pet 的姿态 transform */
