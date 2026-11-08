@@ -472,7 +472,9 @@ function startIpc() {
 
   // 指针进了身体/输入条：关穿透；出去了：恢复穿透。
   ipcMain.on('pet:hit', (_event, inside) => {
-    if (!win || win.isDestroyed() || !args.clickThrough) return;
+    // §4.2：--click-through=0 只关掉"初始穿透"，命中切换照常工作。
+    // 整窗吃点击只是调试窗口时的入口状态，不是一条会驻留的默认路径。
+    if (!win || win.isDestroyed()) return;
     win.setIgnoreMouseEvents(!inside, { forward: true });
   });
 
