@@ -41,4 +41,6 @@ contextBridge.exposeInMainWorld('pet', {
   onAct: subscribe('pet:act'),
   /** 抛掷落地：渲染层据此压一下（§7 落地挤压）。 */
   onLanding: subscribe('pet:landing'),
+  /** 指针在不在身体上：只读状态条靠它开关。 */
+  onHover: subscribe('pet:hover'),
 });

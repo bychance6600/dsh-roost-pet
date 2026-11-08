@@ -76,6 +76,7 @@ let dragState = null; // 拖拽中：记下指针起点和窗口起点
 let throwLoop = null; // 抛掷帧循环：松手之后重力/反弹跑在这儿
 let hitBox = null; // 身体在窗口里的矩形（CSS 像素），渲染层给
 let hitPoll = null; // 光标轮询：click-through 窗口收不到指针消息时兜底
+let hoverInside = null; // 上一次「指针在不在身体上」（状态条开关用，只在变化时发）
 let ignoringMouse = true;
 
 const decoder = new LineDecoder();
@@ -746,6 +747,11 @@ function startHitPoll() {
       point.x <= bounds.x + hitBox.x + hitBox.w &&
       point.y >= bounds.y + hitBox.y &&
       point.y <= bounds.y + hitBox.y + hitBox.h;
+    if (inside !== hoverInside) {
+      hoverInside = inside;
+      // 渲染层拿这个开关只读状态条：指针离开身体时窗口会变成穿透，pointerleave 收不到。
+      win.webContents.send('pet:hover', inside);
+    }
     if (inside === !ignoringMouse) return;
     ignoringMouse = !inside;
     win.setIgnoreMouseEvents(!inside, { forward: true });

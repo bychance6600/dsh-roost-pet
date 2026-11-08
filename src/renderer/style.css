@@ -484,6 +484,13 @@ body {
   font-size: calc(10px * var(--scale));
   line-height: 1.6;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+/* 指针压在她身上才露出来，移开 2 秒后淡出（16:41）。 */
+#status.is-on {
+  opacity: 1;
 }
 
 #status[hidden] {

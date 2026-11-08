@@ -483,7 +483,6 @@ api.onBubbleHide(() => {
 function showState(state, why) {
   if (state !== 'waiting') cancelAmbient();
   petEl.dataset.state = state;
-  status.hidden = false;
   status.dataset.state = state;
   statusState.textContent = STATE_LABEL[state] || state;
   statusWhy.textContent = why || '';
@@ -566,6 +565,12 @@ api.onAct(({ action }) => playAct(action));
 
 // 抛掷落地：主进程算出冲击速度，这里只管压扁那一下（80ms，§7）
 api.onLanding(({ depth }) => squash(Number(depth) || 0.16));
+
+// 状态条：主进程的光标轮询是权威信号（穿透窗收不到 pointerleave）。
+api.onHover((inside) => {
+  if (inside) showStatus();
+  else scheduleStatusHide();
+});
 
 /**
  * Q 弹挤压：只动宠物画面（#pet-media），不碰 #pet 上的姿态 transform。
@@ -669,6 +674,32 @@ petEl.addEventListener('pointercancel', (event) => endDrag(event, { cancelled: t
 // ---------------------------------------------------------------------------
 
 let lastHit = null;
+
+// 只读状态条：默认藏着，指针压到身体上才出现，移开 2 秒后淡出（16:41）。
+// 状态数据照收——textContent 一直在更新，只是不显示。
+const STATUS_LINGER_MS = 2000;
+let statusHideTimer = null;
+
+function showStatus() {
+  clearTimeout(statusHideTimer);
+  statusHideTimer = null;
+  status.classList.add('is-on');
+  status.setAttribute('aria-hidden', 'false');
+}
+
+function scheduleStatusHide() {
+  clearTimeout(statusHideTimer);
+  statusHideTimer = setTimeout(() => {
+    statusHideTimer = null;
+    if (dragSession) {
+      // 拖拽中先不收，松手后再等一轮
+      scheduleStatusHide();
+      return;
+    }
+    status.classList.remove('is-on');
+    status.setAttribute('aria-hidden', 'true');
+  }, STATUS_LINGER_MS);
+}
 
 function insidePet(x, y) {
   const r = petEl.getBoundingClientRect();
