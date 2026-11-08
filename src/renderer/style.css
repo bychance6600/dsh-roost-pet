@@ -282,27 +282,6 @@ body {
   filter: brightness(1.05) saturate(1.1);
 }
 
-#pet[data-state="done"]::after {
-  content: "";
-  position: absolute;
-  inset: -8%;
-  border-radius: 50%;
-  border: 2px solid rgba(120, 200, 160, 0.55);
-  animation: done-ring 700ms ease-out 2;
-  pointer-events: none;
-}
-
-@keyframes done-ring {
-  from {
-    opacity: 0.8;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.12);
-  }
-}
-
 /* 睡着时压过五档姿态 */
 #pet[data-sleep="1"] {
   transform: translateY(6px) scale(0.985) rotate(0deg);

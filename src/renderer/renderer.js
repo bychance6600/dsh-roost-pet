@@ -740,18 +740,24 @@ petEl.addEventListener('animationend', () => {
 // 拖拽与单击：拖走时用主进程 setPosition；单击只做「被碰一下」，反应由 roost 定
 // ---------------------------------------------------------------------------
 
-const DRAG_THRESHOLD = 4; // 超过几个 CSS 像素才算拖，不算点
-let dragSession = null;
+// 按下不算拖：指针挪过 DRAG_THRESHOLD 才算（2026-11-08 22:52）。
+const pointer = PetGesture.createPointerSession(PetGesture.DRAG_THRESHOLD);
+let dragSession = null; // 只记按下点
 let dragRestore = null; // 拖完回到哪：'sleep' | 'state' | 'idle'
 
 function beginDrag(event) {
-  dragSession = { startX: event.screenX, startY: event.screenY, moved: false };
+  pointer.down(event.screenX, event.screenY);
+  dragSession = { startX: event.screenX, startY: event.screenY };
   try {
     petEl.setPointerCapture(event.pointerId);
   } catch {
     /* 没有捕获也能拖 */
   }
-  api.dragStart({ x: event.screenX, y: event.screenY });
+}
+
+function startDragging() {
+  // 以按下点为锚：主进程按「指针相对按下点」跟手，不跳。
+  api.dragStart({ x: dragSession.startX, y: dragSession.startY });
 
   const urls = resolveGroup('drag');
   if (urls && urls.length) {
@@ -765,17 +771,17 @@ function beginDrag(event) {
 }
 
 function endDrag(event, { cancelled = false } = {}) {
-  const session = dragSession;
-  if (!session) return;
+  if (!dragSession) return;
+  const kind = pointer.up();
   dragSession = null;
   try {
     petEl.releasePointerCapture(event.pointerId);
   } catch {
     /* 已经松开 */
   }
-  api.dragEnd();
 
-  if (session.moved) {
+  if (kind === 'drag') {
+    api.dragEnd();
     if (dragRestore === 'sleep') playSleepLoop();
     else if (dragRestore === 'state') resumeStatePlayback();
     else startIdle();
@@ -805,14 +811,11 @@ petEl.addEventListener('pointerdown', (event) => {
 
 petEl.addEventListener('pointermove', (event) => {
   if (!dragSession) return;
-  if (
-    !dragSession.moved &&
-    Math.hypot(event.screenX - dragSession.startX, event.screenY - dragSession.startY) >
-      DRAG_THRESHOLD
-  ) {
-    dragSession.moved = true;
+  const state = pointer.move(event.screenX, event.screenY);
+  if (state === 'start-drag') startDragging();
+  if (state === 'start-drag' || state === 'drag') {
+    api.dragMove({ x: event.screenX, y: event.screenY });
   }
-  if (dragSession.moved) api.dragMove({ x: event.screenX, y: event.screenY });
 });
 
 petEl.addEventListener('pointerup', (event) => endDrag(event));

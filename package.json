@@ -1,6 +1,6 @@
 {
   "name": "dsh-roost-pet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "roost 的身体：一个透明置顶的小窗，只把 roost 给的字冒出来",
   "license": "MIT",
