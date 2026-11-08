@@ -69,6 +69,11 @@ roost 只能从退出码和 stderr 判断这只身体是怎么没的：
 
 映射在 `lib/exit.js`，有单元测试；改之前先改施工单 §4.4，再改这张表。
 
+渲染进程崩（`render-process-gone`）这条在 Windows 上有个坑：崩溃后主线程会卡在
+Chromium 的收尾里，`process.exit()` 和 `app.exit()` 都会"调用后返回但不退出"，
+之后连 `setTimeout` 都不再触发。所以 body 先同步写 `bye`（`fs.writeSync`）再
+`SIGKILL` 自己，退出码固定 `1`；roost 侧 3 秒内就能看到进程没了。
+
 ### 3.1 单实例锁是谁拿着的：`.userdata/body.pid`
 
 抢到锁的那只会在 `.userdata/body.pid` 写一行 JSON：

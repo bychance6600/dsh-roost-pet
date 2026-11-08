@@ -569,26 +569,42 @@ function shutdown(reason) {
   removePidRecord();
   bubbles.dispose();
 
+  // 写 bye 用同步写：渲染进程崩了以后主线程的事件循环已经不转，异步回调和
+  // setTimeout 都等不到（实测 finish 回调到了但 50ms 的定时器永远不触发）。
+  // 同步写把字节直接交给 OS，再退出，退出码才看得见。
   const finish = () => {
-    // 给 stdout 一点时间冲干净，再走。
-    setTimeout(() => app.exit(code), 50);
+    // Windows 上渲染进程崩溃后，主线程会卡在 Chromium 的收尾里：
+    // process.exit() / app.exit() 调用后都会正常返回，但进程不退出（实测 8 秒仍活着，
+    // 而且此后 setTimeout 全都不触发——看门狗也救不回来）。
+    // 这条路径只有一个可靠出口：SIGKILL 走 TerminateProcess，立即退；
+    // 渲染崩本来就该是退出码 1，和 exitCodeFor 的结果一致。
+    if (process.platform === 'win32' && reason === 'renderer-gone') {
+      try {
+        process.kill(process.pid, 'SIGKILL');
+        return;
+      } catch (err) {
+        log('warn', `SIGKILL 失败，退回 process.exit：${err.message}`);
+      }
+    }
+    process.exit(code);
   };
 
   if (handshaken) {
     try {
-      process.stdout.write(encode({ t: 'bye' }), finish);
-    } catch {
-      finish();
+      fs.writeSync(1, encode({ t: 'bye' }) + '\n');
+    } catch (err) {
+      log('warn', `bye 没写成：${err.message}`);
     }
-  } else {
-    // 握手没完成只许发 hello（§2.1），bye 都不发。
-    finish();
   }
+  // 握手没完成只许发 hello（§2.1），bye 都不发。
+  finish();
 
+  // 看门狗：万一 finish 之前就卡住，也必须在 2.5 秒内退。
+  // 不能 .unref()——它正是用来兜住"已经没有别的东西在跑"的那种卡死。
   setTimeout(() => {
     log('warn', '退出超时，硬退');
-    process.exit(code);
-  }, EXIT_DEADLINE_MS).unref();
+    process.exit(code === EXIT.OK ? EXIT.CRASH : code);
+  }, EXIT_DEADLINE_MS);
 }
 
 // ---------------------------------------------------------------------------
