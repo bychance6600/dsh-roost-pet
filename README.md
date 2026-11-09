@@ -23,7 +23,7 @@
 
 ## 装
 
-1. 从 [Releases](https://github.com/bychance6600/dsh-roost-pet/releases) 下载 `dsh-roost-pet-v0.1.0-win32-x64.zip`，解压到：
+1. 从 [Releases](https://github.com/bychance6600/dsh-roost-pet/releases) 下载 `dsh-roost-pet-v0.1.2-win32-x64.zip`，解压到：
 
    ```
    C:\Users\<你>\.dsh-roost\pet\
